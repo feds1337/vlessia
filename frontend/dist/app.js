@@ -203,7 +203,7 @@ function renderDock() {
   }
   lastDockState = st.state;
   dock.dataset.state = st.state;
-  $("#graph").classList.toggle("live", st.state === "connected" && (traffic?.history?.length || 0) > 1);
+  kick();
 
   $("#status-word").textContent = {
     connected: "Подключено", connecting: "Подключение…", disconnecting: "Отключение…", disconnected: "Отключено",
@@ -268,21 +268,71 @@ function ripple() {
 let traffic = null;
 const HISTORY = 90; // samples kept by the client, one per second
 
+// ---------- live speed: numbers and the graph behind the dock ----------
+// Samples arrive once a second. Between them everything is animated frame
+// by frame: the numbers roll towards the new speed, the curve morphs from
+// its old shape to the new one while sliding one step left, and the scale
+// follows the visible peak. With animations off it just redraws.
+
+const GRAPH_TOP = 10; // the peak reaches this far from the top, in %
+const live = {
+  target: { up: 0, down: 0 }, // speeds of the last sample
+  shown: { up: 0, down: 0 },  // speeds on screen
+  from: [], to: [],           // the curve before and after the last sample
+  at: 0,                      // when the last sample arrived
+  scale: 0,
+  raf: 0, last: 0,
+};
+
 function renderTraffic(t) {
   traffic = t;
-  $("#up").textContent = fmtSpeed(t.up);
-  $("#down").textContent = fmtSpeed(t.down);
-  drawGraph();
+  const next = soften((t.history || []).map((p) => p.down));
+  // Morph from what is on screen, aligned to the new sample's positions.
+  const cur = liveCurve(performance.now());
+  let from = cur.length && next.length > cur.length ? cur : cur.slice(1);
+  while (from.length < next.length) from.push(from.length ? from[from.length - 1] : 0);
+  live.from = from.slice(-next.length);
+  live.to = next;
+  live.at = performance.now();
+  live.target = { up: t.up || 0, down: t.down || 0 };
   renderTotals();
+  kick();
 }
 
-// The graph fills the dock from the bottom up to GRAPH_TOP (in % of its
-// height). Each second the curve slides left by one step, so it moves
-// continuously instead of jumping.
-const GRAPH_TOP = 38;
-let graphMax = 0; // the scale, eased towards the data
+const still = () => document.documentElement.classList.contains("no-anim");
+const ease = (x) => 1 - Math.pow(1 - x, 3);
 
-// soften evens out single-second spikes for drawing (weights 1-2-3-2-1).
+// liveCurve: the curve as it should look at time now.
+function liveCurve(now) {
+  const { from, to } = live;
+  if (!to.length) return [];
+  const k = still() ? 1 : ease(Math.min(1, (now - live.at) / 900));
+  return to.map((v, i) => (from[i] ?? v) + (v - (from[i] ?? v)) * k);
+}
+
+function kick() {
+  if (!live.raf) live.raf = requestAnimationFrame(frame);
+}
+
+function frame(now) {
+  live.raf = 0;
+  const dt = Math.min(0.1, Math.max(0, (now - (live.last || now)) / 1000));
+  live.last = now;
+  const k = still() ? 1 : 1 - Math.exp(-dt / 0.22);
+  let moving = false;
+  for (const key of ["up", "down"]) {
+    const d = live.target[key] - live.shown[key];
+    live.shown[key] = Math.abs(d) < 1 ? live.target[key] : live.shown[key] + d * k;
+    moving ||= live.shown[key] !== live.target[key];
+  }
+  $("#up").textContent = fmtSpeed(Math.round(live.shown.up));
+  $("#down").textContent = fmtSpeed(Math.round(live.shown.down));
+  const on = drawGraph(now, dt);
+  // Keep animating while the curve slides or the numbers roll.
+  if (!still() && (on || moving)) kick();
+}
+
+// soften evens out single-second spikes (weights 1-2-3-2-1).
 function soften(v) {
   const at = (i) => v[Math.min(v.length - 1, Math.max(0, i))];
   return v.map((x, i) => (at(i - 2) + 2 * at(i - 1) + 3 * x + 2 * at(i + 1) + at(i + 2)) / 9);
@@ -311,36 +361,34 @@ function curve(pts) {
   return path;
 }
 
-function drawGraph() {
-  const hist = traffic?.history || [];
+// drawGraph draws the download curve; returns whether it is on screen.
+function drawGraph(now, dt) {
   const g = $("#graph");
-  const live = hist.length > 1 && state?.status.state === "connected";
-  g.classList.toggle("live", live);
-  if (hist.length < 2) {
-    for (const id of ["#graph-area", "#graph-down", "#graph-up"]) $(id).removeAttribute("d");
-    return;
+  const vals = liveCurve(now);
+  const on = vals.length > 1 && state?.status.state === "connected";
+  g.classList.toggle("live", on);
+  if (vals.length < 2) {
+    $("#graph-area").removeAttribute("d");
+    $("#graph-down").removeAttribute("d");
+    return false;
   }
-  let target = 64 * 1024;
-  for (const p of hist) target = Math.max(target, p.up, p.down);
-  target *= 1.15;
-  graphMax = graphMax ? graphMax + (target - graphMax) * 0.35 : target;
+  // The scale follows the visible peak: never below it (the curve stays
+  // inside the dock), gently back down when the speed drops.
+  const top = Math.max(64 * 1024, ...vals);
+  const peak = top * 1.08;
+  live.scale = !live.scale || still() ? peak : live.scale + (peak - live.scale) * (1 - Math.exp(-dt / (peak > live.scale ? 0.15 : 1.2)));
+  live.scale = Math.max(live.scale, top);
 
-  // The newest point sits one step past the right edge and slides in.
-  const step = 100 / (HISTORY - 2);
-  const x0 = 100 + step - (hist.length - 1) * step;
-  const y = (v) => 100 - Math.min(v / graphMax, 1.6) * (100 - GRAPH_TOP);
-  const pts = (key) => soften(hist.map((p) => p[key])).map((v, i) => [x0 + i * step, y(v)]);
-  const down = curve(pts("down"));
-  $("#graph-down").setAttribute("d", down);
-  $("#graph-area").setAttribute("d", `${down}L${100 + step} 101L${x0} 101Z`);
-  $("#graph-up").setAttribute("d", curve(pts("up")));
-
-  const scroll = $("#graph-scroll");
-  scroll.style.transition = "none";
-  scroll.style.transform = "translateX(0)";
-  void scroll.getBoundingClientRect();
-  scroll.style.transition = "";
-  scroll.style.transform = `translateX(${-step}px)`;
+  // The newest point slides in from one step past the right edge.
+  const step = 100 / (HISTORY - 3);
+  const phase = still() ? 1 : Math.min(1, (now - live.at) / 1000);
+  const right = 100 + step * (1 - phase);
+  const n = vals.length;
+  const pts = vals.map((v, i) => [right - (n - 1 - i) * step, 100 - (v / live.scale) * (100 - GRAPH_TOP)]);
+  const line = curve(pts);
+  $("#graph-down").setAttribute("d", line);
+  $("#graph-area").setAttribute("d", `${line}L${pts[n - 1][0].toFixed(2)} 101L${pts[0][0].toFixed(2)} 101Z`);
+  return on;
 }
 
 function renderTotals() {

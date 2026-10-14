@@ -148,12 +148,7 @@ p { margin: 0; }
   gap: 12px;
   margin: 28px 0 0;
 }
-.meters dt { color: var(--muted); font-size: 12px; display: flex; align-items: center; gap: 6px; }
-
-/* Line samples next to the meter labels double as the graph's legend. */
-.key { display: inline-block; width: 14px; height: 0; border-top: 2px solid currentColor; opacity: .9; }
-.key-up { border-top-style: dashed; }
-.dock[data-state="connected"] .key { color: var(--lagoon-ink); }
+.meters dt { color: var(--muted); font-size: 12px; }
 
 /* ---------- speed graph: the dock's background ---------- */
 
@@ -172,9 +167,6 @@ p { margin: 0; }
 .dock-graph path { vector-effect: non-scaling-stroke; stroke-linejoin: round; stroke-linecap: round; }
 .dock-graph .graph-area { stroke: none; }
 .dock-graph .graph-down { fill: none; stroke: currentColor; stroke-width: 2; opacity: .45; }
-.dock-graph .graph-up { fill: none; stroke: currentColor; stroke-width: 1.5; stroke-dasharray: 4 4; opacity: .3; }
-/* One step per second: the curve glides left while the next sample comes. */
-#graph-scroll { transition: transform 1s linear; }
 
 .totals { margin-top: 8px; font-size: 12px; color: var(--muted); }
 .totals:empty { display: none; }

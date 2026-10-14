@@ -8,7 +8,7 @@
 </head>
 <body>
   <aside class="dock" id="dock" data-state="disconnected">
-    <!-- Speed of the last minute and a half, behind the whole column. -->
+    <!-- Download speed of the last minute and a half, behind the whole column. -->
     <svg class="dock-graph" id="graph" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
       <defs>
         <linearGradient id="graph-fill" x1="0" y1="0" x2="0" y2="1">
@@ -16,11 +16,8 @@
           <stop offset="1" stop-color="currentColor" stop-opacity="0"/>
         </linearGradient>
       </defs>
-      <g id="graph-scroll">
-        <path class="graph-area" id="graph-area" fill="url(#graph-fill)"/>
-        <path class="graph-down" id="graph-down"/>
-        <path class="graph-up" id="graph-up"/>
-      </g>
+      <path class="graph-area" id="graph-area" fill="url(#graph-fill)"/>
+      <path class="graph-down" id="graph-down"/>
     </svg>
     <div class="brand">
       <svg viewBox="0 0 32 32" aria-hidden="true"><path d="M3 2h26v13c0 8-7 12-13 15C10 27 3 23 3 15z"/><circle cx="16" cy="13" r="3.5" class="cut"/><rect x="14.4" y="13" width="3.2" height="9" class="cut"/></svg>
@@ -35,8 +32,8 @@
     </div>
 
     <dl class="meters">
-      <div><dt><i class="key key-up" aria-hidden="true"></i>Отправка</dt><dd id="up">0 Б/с</dd></div>
-      <div><dt><i class="key key-down" aria-hidden="true"></i>Получение</dt><dd id="down">0 Б/с</dd></div>
+      <div><dt>Отправка</dt><dd id="up">0 Б/с</dd></div>
+      <div><dt>Получение</dt><dd id="down">0 Б/с</dd></div>
     </dl>
 
     <p class="totals" id="totals"></p>

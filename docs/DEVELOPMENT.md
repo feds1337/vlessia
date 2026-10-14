@@ -4,6 +4,14 @@
 
 ## Сборка
 
+Сборка для macOS и Linux делается на соответствующей системе (Wails использует системный WebView через cgo):
+
+- **Windows:** WebView2 (есть в Windows 10/11), для установщика — NSIS.
+- **macOS:** Xcode Command Line Tools. Universal-сборка: `wails build -platform darwin/universal`.
+- **Linux:** `sudo apt install libgtk-3-dev libwebkit2gtk-4.1-dev pkg-config`, сборка с тегом `webkit2_41`: `wails build -tags webkit2_41`.
+
+CI (`.github/workflows/ci.yml`) на каждый push проверяет, тестирует и собирает клиент на всех трёх системах.
+
 Нужны Go 1.27+ и Wails CLI v2:
 
 ```bash
@@ -90,3 +98,25 @@ Vlessia-vX.Y.Z-setup.exe /S --relaunch [--connect] /D=<папка установ
 `project.nsi` в `.onInstSuccess` разбирает `--relaunch` / `--connect` и запускает новую версию (с `--connect` — если до обновления VPN был подключён). Portable-копия (рядом нет `uninstall.exe`) обновляться на месте не может и открывает страницу релиза.
 
 Пока идёт генерация привязок Wails (`wails build` запускает программу с тегом `bindings`), `main()` не трогает папку данных, логи и миграцию — см. `bindings_on.go`.
+
+### «Весь трафик» на macOS и Linux
+
+GUI-клиент работает от обычного пользователя: графические приложения от root на Linux под Wayland не запускаются, а на macOS это небезопасно. Для режима TUN клиент запускает свой же исполняемый файл с `--tun-helper` от root через `osascript` (macOS) или `pkexec` (Linux) — см. `internal/tunhelper`:
+
+1. Клиент открывает служебный порт на 127.0.0.1 и передаёт помощнику одноразовый токен.
+2. Помощник подключается, предъявляет токен, добавляет маршруты до VPN-серверов через физический шлюз, запускает Xray с TUN-входом (`utun99` / `vlessia0`) и выходом в SOCKS клиента и направляет `0.0.0.0/1`, `128.0.0.0/1`, `::/1`, `8000::/1` в туннель. DNS: на Linux через `resolvectl` (без systemd-resolved — маршруты к серверам из `/etc/resolv.conf`), на macOS — маршруты к серверам из `scutil --dns`; запросы на порт 53 в туннеле разрешает Xray через VPN.
+3. Сообщает `ready`. Когда клиент закрывает соединение (отключение или падение), помощник удаляет маршруты и выходит; если завершится помощник — клиент отключается и показывает причину.
+
+Исходящие соединения клиента привязаны к физическому адаптеру (`IP_BOUND_IF` на macOS, `SO_BINDTODEVICE` на Linux, ядро 5.7+), поэтому прямой трафик не попадает обратно в туннель.
+
+### Бенчмарки
+
+```bash
+go test ./internal/xray -run XXX -bench . -benchtime 3x -benchmem
+```
+
+`BenchmarkVLESS` — путь через Xray и VLESS, `BenchmarkAmneziaWG` и `BenchmarkAmneziaWGBridgeOnly` — через SOCKS-мост и AmneziaWG в userspace. Сервер AWG в бенчмарке работает в том же процессе, поэтому цифры ниже реальных.
+
+### Разработческие сборки рядом с установленным клиентом
+
+`-ldflags "-X main.instanceID=vlessia-dev"` даёт сборке отдельную блокировку единственного экземпляра, а `VLESSIA_DATA=<папка>` — отдельную папку данных, так что её можно запускать параллельно с установленным клиентом, не затрагивая его.

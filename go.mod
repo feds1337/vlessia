@@ -8,6 +8,7 @@ require (
 	github.com/apernet/quic-go v0.59.1-0.20260217092621-db4786c77a22
 	github.com/n0madic/go-openvpn v0.0.0-20260924061328-383af88a500a
 	github.com/n0madic/go-openvpn/pkg/netstack v0.0.0-20260924061328-383af88a500a
+	github.com/vishvananda/netlink v1.3.1
 	github.com/wailsapp/wails/v2 v2.16.0
 	github.com/xtls/xray-core v1.260327.0
 	golang.org/x/crypto v0.58.0
@@ -54,7 +55,6 @@ require (
 	github.com/tkrajina/go-reflector v0.5.8 // indirect
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
 	github.com/valyala/fasttemplate v1.2.2 // indirect
-	github.com/vishvananda/netlink v1.3.1 // indirect
 	github.com/vishvananda/netns v0.0.5 // indirect
 	github.com/wailsapp/go-webview2 v1.0.22 // indirect
 	github.com/wailsapp/mimetype v1.4.1 // indirect

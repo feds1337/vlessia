@@ -26,21 +26,30 @@ func entry(exe string) string {
 		"Exec=" + desktopQuote(exe) + " " + Arg + "\nIcon=vlessia\nTerminal=false\nX-GNOME-Autostart-enabled=true\n"
 }
 
-// parseCommand returns the executable from the Exec line.
+// parseCommand returns the executable from the Exec line, undoing the
+// quoting of desktopQuote.
 func parseCommand(desktop string) string {
 	for _, line := range strings.Split(desktop, "\n") {
 		v, ok := strings.CutPrefix(line, "Exec=")
 		if !ok {
 			continue
 		}
-		if strings.HasPrefix(v, `"`) {
-			end := strings.Index(v[1:], `" `)
-			if end < 0 {
-				end = len(v) - 2
-			}
-			return strings.NewReplacer(`\\`, `\`, `\"`, `"`, "\\`", "`", `\$`, "$").Replace(v[1 : end+1])
+		if !strings.HasPrefix(v, `"`) {
+			return strings.Fields(v)[0]
 		}
-		return strings.Fields(v)[0]
+		var b strings.Builder
+		for i := 1; i < len(v); i++ {
+			switch c := v[i]; {
+			case c == '\\' && i+1 < len(v):
+				i++
+				b.WriteByte(v[i])
+			case c == '"':
+				return b.String()
+			default:
+				b.WriteByte(c)
+			}
+		}
+		return b.String()
 	}
 	return ""
 }

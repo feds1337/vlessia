@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Vlessia</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <aside class="sidebar">
+    <div class="brand">
+      <svg viewBox="0 0 32 32" class="brand-logo"><path d="M3 2h26v13c0 8-7 12-13 15C10 27 3 23 3 15z"/><circle cx="16" cy="13" r="3.5" fill="#0f1115"/><rect x="14.4" y="13" width="3.2" height="9" fill="#0f1115"/></svg>
+      <span>Vlessia</span>
+    </div>
+    <nav>
+      <button class="nav active" data-view="servers">Серверы</button>
+      <button class="nav" data-view="subs">Подписки</button>
+      <button class="nav" data-view="settings">Настройки</button>
+      <button class="nav" data-view="logs">Логи</button>
+    </nav>
+    <div class="sidebar-foot"><div id="admin-badge"></div><div id="version"></div></div>
+  </aside>
+
+  <main>
+    <section class="conn" id="conn">
+      <button class="power" id="power" title="Подключить / отключить">
+        <svg viewBox="0 0 24 24"><path d="M12 3v8"/><path d="M6.3 7.3a8 8 0 1 0 11.4 0"/></svg>
+      </button>
+      <div class="conn-info">
+        <div class="conn-state" id="conn-state">Отключено</div>
+        <div class="conn-server" id="conn-server">Сервер не выбран</div>
+        <div class="conn-sub" id="conn-sub"></div>
+        <div class="conn-error" id="conn-error"></div>
+      </div>
+      <div class="conn-side">
+        <div class="seg" id="mode-seg">
+          <button data-mode="proxy">Системный прокси</button>
+          <button data-mode="tun">TUN</button>
+        </div>
+        <div class="speed">
+          <span title="Отправка">↑ <b id="up">0 Б/с</b></span>
+          <span title="Получение">↓ <b id="down">0 Б/с</b></span>
+          <button class="link" id="test-btn">Проверить</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="view active" id="view-servers">
+      <div class="toolbar">
+        <button class="btn primary" id="paste-btn">Вставить из буфера</button>
+        <button class="btn" id="add-btn">Добавить…</button>
+        <button class="btn" id="file-btn">Открыть файл…</button>
+        <button class="btn" id="ping-btn">Пинг</button>
+        <button class="btn" id="update-subs-btn" title="Обновить все подписки">Обновить</button>
+        <input class="search" id="search" placeholder="Поиск">
+      </div>
+      <div class="list" id="server-list"></div>
+    </section>
+
+    <section class="view" id="view-subs">
+      <div class="toolbar">
+        <input class="input grow" id="sub-url" placeholder="https://… ссылка на подписку">
+        <input class="input" id="sub-name" placeholder="Название (необязательно)">
+        <button class="btn primary" id="sub-add">Добавить</button>
+      </div>
+      <div class="list" id="sub-list"></div>
+    </section>
+
+    <section class="view" id="view-settings">
+      <form class="settings" id="settings-form">
+        <div class="field">
+          <label>Режим</label>
+          <select name="mode">
+            <option value="proxy">Системный прокси — браузеры и большинство программ, права админа не нужны</option>
+            <option value="tun">TUN — весь трафик системы, нужны права администратора</option>
+          </select>
+        </div>
+        <div class="row">
+          <div class="field"><label>SOCKS5 порт</label><input class="input" name="socksPort" type="number" min="1" max="65535"></div>
+          <div class="field"><label>HTTP порт</label><input class="input" name="httpPort" type="number" min="1" max="65535"></div>
+        </div>
+        <div class="field">
+          <label>DNS-серверы (через запятую; первый также ставится на TUN-адаптер)</label>
+          <input class="input" name="dns">
+        </div>
+        <label class="check"><input type="checkbox" name="bypassRu"> Российские домены (.ru, .su, .рф) — напрямую, мимо VPN</label>
+        <label class="check"><input type="checkbox" name="sound"> Звук при подключении</label>
+        <div class="field">
+          <label>Запуск</label>
+          <label class="check"><input type="checkbox" id="autostart"> Запускать вместе с Windows (сразу в трей)</label>
+          <div class="hint" id="autostart-hint"></div>
+          <label class="check"><input type="checkbox" name="autoConnect"> Подключаться при запуске к выбранному серверу</label>
+        </div>
+        <div class="field">
+          <label>Уровень логов xray</label>
+          <select name="logLevel">
+            <option value="debug">debug</option>
+            <option value="info">info</option>
+            <option value="warning">warning</option>
+            <option value="error">error</option>
+            <option value="none">none</option>
+          </select>
+        </div>
+        <div class="actions">
+          <button class="btn primary" type="submit">Сохранить</button>
+          <button class="btn" type="button" id="open-dir">Открыть папку данных</button>
+        </div>
+      </form>
+    </section>
+
+    <section class="view" id="view-logs">
+      <div class="toolbar">
+        <button class="btn" id="logs-refresh">Обновить</button>
+        <label class="check"><input type="checkbox" id="logs-auto" checked> Автообновление</label>
+      </div>
+      <pre class="logs" id="logs"></pre>
+    </section>
+  </main>
+
+  <dialog id="add-dialog">
+    <form method="dialog" class="dialog">
+      <h3>Добавить серверы</h3>
+      <p class="muted">Вставьте ссылки vless://, vmess://, trojan://, ss://, hysteria2://, wireguard://, socks://, http://хост:порт (по одной на строку), ключ Outline ssconf://, ссылку vpn:// из AmneziaVPN, конфигурацию WireGuard / AmneziaWG ([Interface]…) или OpenVPN (.ovpn), либо URL подписки.</p>
+      <textarea id="add-text" rows="8" spellcheck="false"></textarea>
+      <div class="actions">
+        <button class="btn" value="cancel">Отмена</button>
+        <button class="btn primary" id="add-confirm" value="ok">Добавить</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="admin-dialog">
+    <form method="dialog" class="dialog">
+      <h3>Нужны права администратора</h3>
+      <p class="muted">Режим TUN (а WireGuard, AmneziaWG и OpenVPN работают только в нём) создаёт виртуальный сетевой адаптер и меняет маршруты — для этого Windows требует права администратора. Перезапустить клиент от имени администратора и подключиться?</p>
+      <div class="actions">
+        <button class="btn" value="cancel">Отмена</button>
+        <button class="btn" value="proxy" id="admin-proxy">Использовать прокси</button>
+        <button class="btn primary" value="restart" id="admin-restart">Перезапустить</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="auth-dialog">
+    <form method="dialog" class="dialog">
+      <h3>Вход OpenVPN</h3>
+      <p class="muted">Профиль <b id="auth-server"></b> требует логин и пароль (auth-user-pass). Они сохранятся в настройках клиента.</p>
+      <input class="input" id="auth-user" placeholder="Логин" autocomplete="username">
+      <input class="input" id="auth-pass" type="password" placeholder="Пароль" autocomplete="current-password">
+      <div class="actions">
+        <button class="btn" value="cancel">Отмена</button>
+        <button class="btn primary" value="ok">Войти</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="rename-dialog">
+    <form method="dialog" class="dialog">
+      <h3>Название подписки</h3>
+      <p class="muted">Оставьте пустым, чтобы использовать название от провайдера.</p>
+      <input class="input" id="rename-input">
+      <div class="actions">
+        <button class="btn" value="cancel">Отмена</button>
+        <button class="btn primary" value="ok">Сохранить</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div class="toasts" id="toasts"></div>
+  <script src="app.js"></script>
+</body>
+</html>

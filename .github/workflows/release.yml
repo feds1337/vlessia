@@ -1,0 +1,53 @@
+name: Release
+
+# Push a tag like v0.2.0 to build the installer and publish a GitHub release.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Install Wails and NSIS
+        run: |
+          go install github.com/wailsapp/wails/v2/cmd/wails@v2.16.0
+          choco install nsis -y --no-progress
+          echo "C:\Program Files (x86)\NSIS" >> $env:GITHUB_PATH
+
+      - name: Test
+        run: go test ./...
+
+      - name: Set version from tag
+        shell: pwsh
+        run: |
+          # The installer needs a plain x.y.z version (no "-beta" suffix).
+          $v = "${{ github.ref_name }}".TrimStart("v") -replace "-.*", ""
+          $j = Get-Content wails.json -Raw | ConvertFrom-Json
+          $j.info.productVersion = $v
+          $j | ConvertTo-Json -Depth 10 | Set-Content wails.json -Encoding utf8
+
+      - name: Build
+        run: wails build -clean -trimpath -ldflags "-s -w -X main.version=${{ github.ref_name }}" -nsis
+
+      - name: Name artifacts
+        shell: pwsh
+        run: |
+          $v = "${{ github.ref_name }}"
+          Move-Item build/bin/Vlessia-amd64-installer.exe "build/bin/Vlessia-$v-setup.exe"
+          Move-Item build/bin/Vlessia.exe "build/bin/Vlessia-$v-portable.exe"
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: build/bin/*.exe
+          generate_release_notes: true
+          prerelease: ${{ contains(github.ref_name, '-') }}

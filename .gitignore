@@ -1,0 +1,5 @@
+build/bin/
+build/windows/installer/tmp/
+frontend/wailsjs/
+wintun.dll
+!internal/tun/wintun.dll

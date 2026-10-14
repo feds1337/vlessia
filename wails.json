@@ -1,0 +1,18 @@
+{
+  "$schema": "https://wails.io/schemas/config.v2.json",
+  "name": "Vlessia",
+  "outputfilename": "Vlessia",
+  "frontend:dir": "frontend",
+  "frontend:install": "",
+  "frontend:build": "",
+  "author": {
+    "name": "Vlessia"
+  },
+  "info": {
+    "productName": "Vlessia",
+    "productVersion": "0.1.0",
+    "comments": "VPN client based on Xray-core",
+    "companyName": "Vlessia",
+    "copyright": "© 2026 feds1337. AGPL-3.0"
+  }
+}

@@ -20,15 +20,16 @@ type Tray struct {
 	mProxy   *systray.MenuItem
 	mTun     *systray.MenuItem
 	mStatus  *systray.MenuItem
+	mUpdate  *systray.MenuItem
 }
 
 func StartTray(app *App) *Tray {
 	t := &Tray{
 		app:      app,
 		ready:    make(chan struct{}),
-		iconOn:   makeIcon(color.RGBA{0x22, 0xc5, 0x5e, 0xff}),
+		iconOn:   makeIcon(color.RGBA{0x0e, 0x7c, 0x86, 0xff}),
 		iconOff:  makeIcon(color.RGBA{0x6b, 0x72, 0x80, 0xff}),
-		iconWait: makeIcon(color.RGBA{0xf5, 0x9e, 0x0b, 0xff}),
+		iconWait: makeIcon(color.RGBA{0xc2, 0x7c, 0x0e, 0xff}),
 	}
 	// systray runs its own Win32 message loop on a locked OS thread.
 	go systray.Run(t.onReady, func() {})
@@ -42,6 +43,8 @@ func (t *Tray) onReady() {
 
 	t.mStatus = systray.AddMenuItem("Отключено", "")
 	t.mStatus.Disable()
+	t.mUpdate = systray.AddMenuItem("Установить обновление", "")
+	t.mUpdate.Hide()
 	systray.AddSeparator()
 	mShow := systray.AddMenuItem("Открыть", "")
 	t.mToggle = systray.AddMenuItem("Подключить", "")
@@ -61,6 +64,9 @@ func (t *Tray) onReady() {
 			select {
 			case <-mShow.ClickedCh:
 				t.app.ShowWindow()
+			case <-t.mUpdate.ClickedCh:
+				t.app.ShowWindow()
+				go func() { _ = t.app.ApplyUpdate() }()
 			case <-t.mToggle.ClickedCh:
 				go t.toggle()
 			case <-t.mProxy.ClickedCh:
@@ -130,6 +136,21 @@ func (t *Tray) Update(st Status) {
 		systray.SetTooltip("Vlessia — отключено")
 		t.mStatus.SetTitle("Отключено")
 		t.mToggle.SetTitle("Подключить")
+	}
+}
+
+// SetUpdate shows the update item while a new version is available.
+func (t *Tray) SetUpdate(info UpdateInfo) {
+	select {
+	case <-t.ready:
+	default:
+		return
+	}
+	if info.State == "available" {
+		t.mUpdate.SetTitle("Установить обновление " + info.Latest)
+		t.mUpdate.Show()
+	} else {
+		t.mUpdate.Hide()
 	}
 }
 

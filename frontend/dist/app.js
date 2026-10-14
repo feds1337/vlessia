@@ -2,8 +2,10 @@
 
 const api = () => window.go.main.App;
 const $ = (sel) => document.querySelector(sel);
+const $$ = (sel) => document.querySelectorAll(sel);
 
 let state = null;
+let upd = null;
 const pings = {};
 let logsTimer = null;
 
@@ -14,7 +16,7 @@ function toast(msg, isError = false) {
   el.className = "toast" + (isError ? " error" : "");
   el.textContent = msg;
   $("#toasts").appendChild(el);
-  setTimeout(() => el.remove(), isError ? 7000 : 3500);
+  setTimeout(() => el.remove(), isError ? 7000 : 3000);
 }
 
 async function call(fn, ...args) {
@@ -51,119 +53,7 @@ function fmtBytes(b) {
 }
 
 function fmtDate(unix) {
-  return unix ? new Date(unix * 1000).toLocaleString("ru-RU", { dateStyle: "short", timeStyle: "short" }) : "—";
-}
-
-// ---------- rendering ----------
-
-function render() {
-  if (!state) return;
-  renderConn();
-  renderServers();
-  renderSubs();
-  $("#admin-badge").textContent = state.status.admin ? "Запущено от администратора" : "";
-}
-
-function renderConn() {
-  const st = state.status;
-  const conn = $("#conn");
-  conn.classList.toggle("connected", st.state === "connected");
-  conn.classList.toggle("connecting", st.state === "connecting" || st.state === "disconnecting");
-
-  $("#conn-state").textContent = { connected: "Подключено", connecting: "Подключение…", disconnecting: "Отключение…", disconnected: "Отключено" }[st.state];
-  const srv = state.servers.find((s) => s.id === (st.state === "disconnected" ? state.selected : st.serverId));
-  let line = srv ? `${srv.name} · ${srv.address}:${srv.port}` : "Сервер не выбран";
-  if (st.state === "connected") {
-    line += st.mode === "tun" ? ` · TUN через «${st.interface}»` : ` · прокси 127.0.0.1:${state.settings.httpPort}`;
-  }
-  const sum = srv?.subId ? subSummary(state.subscriptions.find((x) => x.id === srv.subId)) : "";
-  $("#conn-server").textContent = line;
-  $("#conn-sub").textContent = sum ? `Подписка: ${sum}` : "";
-  $("#conn-error").textContent =
-    st.error === "need_admin" ? "Для TUN нужны права администратора" :
-    st.error === "need_ovpn_auth" ? "OpenVPN: нужны логин и пароль" : st.error || "";
-  $("#test-btn").disabled = st.state !== "connected";
-
-  // WireGuard/AmneziaWG are full tunnels: they always run in TUN mode.
-  const selected = state.servers.find((x) => x.id === (st.state === "disconnected" ? state.selected : st.serverId));
-  const fullTunnelOnly = !!(selected?.wg || selected?.ovpn);
-  const mode = fullTunnelOnly ? "tun" : state.settings.mode;
-  document.querySelectorAll("#mode-seg button").forEach((b) => {
-    b.classList.toggle("active", b.dataset.mode === mode);
-    const locked = fullTunnelOnly && b.dataset.mode === "proxy";
-    b.disabled = locked;
-    b.title = locked ? "WireGuard, AmneziaWG и OpenVPN работают только в режиме полного туннеля (TUN)" : "";
-  });
-  $("#admin-proxy").hidden = fullTunnelOnly;
-}
-
-function pingCell(id) {
-  const ms = pings[id];
-  if (ms === undefined) return `<div class="ping"></div>`;
-  if (ms === null) return `<div class="ping">…</div>`;
-  if (ms === -2) return `<div class="ping" title="WireGuard не отвечает на проверки — проверьте подключением">н/д</div>`;
-  if (ms < 0) return `<div class="ping bad">таймаут</div>`;
-  const cls = ms < 150 ? "good" : ms < 400 ? "mid" : "bad";
-  return `<div class="ping ${cls}">${ms} мс</div>`;
-}
-
-const PROTO_LABEL = { shadowsocks: "ss", hysteria2: "hy2", amneziawg: "awg", wireguard: "wg", openvpn: "ovpn" };
-
-function serverTags(s) {
-  const tags = [PROTO_LABEL[s.protocol] || s.protocol];
-  if (s.wg) return tags;
-  if (s.ovpn) return [...tags, s.network];
-  if (s.accessKeyUrl) tags.push("outline");
-  tags.push(s.network);
-  if (s.security !== "none") tags.push(s.security);
-  if (s.obfs) tags.push(s.obfs);
-  if (s.hopPorts) tags.push("hop");
-  return tags;
-}
-
-function renderServers() {
-  const q = $("#search").value.trim().toLowerCase();
-  const servers = state.servers.filter((s) => !q || s.name.toLowerCase().includes(q) || s.address.toLowerCase().includes(q));
-  const list = $("#server-list");
-  if (!state.servers.length) {
-    list.innerHTML = `<div class="empty">Серверов пока нет.<br>Скопируйте ссылку vless:// или URL подписки и нажмите «Вставить из буфера».</div>`;
-    return;
-  }
-
-  const subGroup = (id) => {
-    const sub = state.subscriptions.find((s) => s.id === id);
-    const sum = subSummary(sub);
-    return subTitle(sub) + (sum ? " · " + sum : "");
-  };
-  let html = "";
-  let lastGroup = null;
-  for (const s of servers) {
-    const group = s.subId ? subGroup(s.subId) : "Добавленные вручную";
-    if (group !== lastGroup) {
-      html += `<div class="group">${esc(group)}</div>`;
-      lastGroup = group;
-    }
-    const tags = serverTags(s);
-    html += `
-      <div class="item ${s.id === state.selected ? "selected" : ""}" data-id="${s.id}">
-        <div class="radio"></div>
-        <div class="item-main">
-          <div class="item-name">${esc(s.name)}</div>
-          <div class="item-sub">${tags.map((t) => `<span class="tag">${esc(t)}</span>`).join("")}${esc(s.address)}:${s.port}</div>
-        </div>
-        ${pingCell(s.id)}
-        <div class="item-actions">
-          ${s.ovpn?.needAuth ? `<button class="btn small" data-act="login" title="Логин и пароль OpenVPN">Логин</button>` : ""}
-          <button class="btn small" data-act="copy" title="Скопировать ссылку">Ссылка</button>
-          <button class="btn small danger" data-act="del" title="Удалить">✕</button>
-        </div>
-      </div>`;
-  }
-  list.innerHTML = html || `<div class="empty">Ничего не найдено</div>`;
-}
-
-function subTitle(sub) {
-  return sub?.name || sub?.title || "Подписка";
+  return new Date(unix * 1000).toLocaleString("ru-RU", { day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" });
 }
 
 function plural(n, one, few, many) {
@@ -173,11 +63,49 @@ function plural(n, one, few, many) {
   return many;
 }
 
+const bareVersion = (v) => String(v || "").replace(/^v/, "");
+
+// ---------- servers ----------
+
+const PROTO = {
+  vless: "VLESS", vmess: "VMess", trojan: "Trojan", shadowsocks: "Shadowsocks", hysteria2: "Hysteria 2",
+  amneziawg: "AmneziaWG", wireguard: "WireGuard", openvpn: "OpenVPN", socks: "SOCKS5", http: "HTTP",
+};
+const TRANSPORT = { ws: "WebSocket", grpc: "gRPC", xhttp: "XHTTP", httpupgrade: "HTTPUpgrade" };
+const SECURITY = { reality: "REALITY", tls: "TLS" };
+
+// protoLine describes a server in words, e.g. "VLESS / XHTTP / REALITY".
+function protoLine(s) {
+  const parts = [s.accessKeyUrl ? "Outline" : PROTO[s.protocol] || s.protocol];
+  if (s.ovpn) parts.push(s.network.toUpperCase());
+  if (!s.wg && !s.ovpn) {
+    if (TRANSPORT[s.network]) parts.push(TRANSPORT[s.network]);
+    if (SECURITY[s.security] && s.protocol !== "hysteria2") parts.push(SECURITY[s.security]);
+    if (s.obfs) parts.push(s.obfs);
+    if (s.hopPorts) parts.push("port hopping");
+  }
+  return parts.join(" / ");
+}
+
+function pingCell(id) {
+  const ms = pings[id];
+  if (ms === undefined) return `<span class="ping"></span>`;
+  if (ms === null) return `<span class="ping">…</span>`;
+  if (ms === -2) return `<span class="ping" title="Этот протокол не отвечает на проверку — проверьте подключением">—</span>`;
+  if (ms < 0) return `<span class="ping bad">нет ответа</span>`;
+  const cls = ms < 150 ? "good" : ms < 400 ? "mid" : "bad";
+  return `<span class="ping ${cls}">${ms} мс</span>`;
+}
+
+function subTitle(sub) {
+  return sub?.name || sub?.title || "Подписка";
+}
+
 function daysLeft(sub) {
   return Math.ceil((sub.expire * 1000 - Date.now()) / 86400000);
 }
 
-// Short "осталось 45.3 ГБ · 29 дней" summary for list headers and the connection card.
+// subSummary: "осталось 143 ГБ, 23 дня".
 function subSummary(sub) {
   if (!sub) return "";
   const parts = [];
@@ -185,69 +113,161 @@ function subSummary(sub) {
     parts.push(sub.total ? `осталось ${fmtBytes(Math.max(0, sub.total - sub.upload - sub.download))}` : "безлимит");
   }
   if (sub.expire) {
-    const days = daysLeft(sub);
-    parts.push(days > 0 ? `${days} ${plural(days, "день", "дня", "дней")}` : "истекла");
+    const d = daysLeft(sub);
+    parts.push(d > 0 ? `${d} ${plural(d, "день", "дня", "дней")}` : "истекла");
   }
-  return parts.join(" · ");
+  return parts.join(", ");
 }
 
+function renderServers() {
+  const list = $("#server-list");
+  if (!state.servers.length) {
+    list.innerHTML = `<div class="empty"><b>Добавьте первый сервер</b>Скопируйте ссылку на сервер или подписку от провайдера и нажмите «Вставить из буфера».</div>`;
+    return;
+  }
+  const q = $("#search").value.trim().toLowerCase();
+  const servers = state.servers.filter((s) => !q || s.name.toLowerCase().includes(q) || s.address.toLowerCase().includes(q));
+
+  let html = "";
+  let lastGroup = null;
+  for (const s of servers) {
+    const group = s.subId || "";
+    if (group !== lastGroup) {
+      const sub = state.subscriptions.find((x) => x.id === s.subId);
+      const sum = subSummary(sub);
+      html += s.subId
+        ? `<div class="group">${esc(subTitle(sub))}${sum ? `<small>${esc(sum)}</small>` : ""}</div>`
+        : `<div class="group">Добавленные вручную</div>`;
+      lastGroup = group;
+    }
+    html += `
+      <div class="row ${s.id === state.selected ? "selected" : ""}" data-id="${s.id}" tabindex="0">
+        <div class="row-main">
+          <div class="row-name">${esc(s.name)}</div>
+          <div class="row-meta"><span class="proto">${esc(protoLine(s))}</span>${esc(s.address)}:${s.port}</div>
+        </div>
+        <div class="row-actions">
+          ${s.ovpn?.needAuth ? `<button class="btn ghost small" data-act="login">Логин</button>` : ""}
+          <button class="btn ghost small" data-act="copy">Копировать</button>
+          <button class="btn ghost small" data-act="del">Удалить</button>
+        </div>
+        ${pingCell(s.id)}
+      </div>`;
+  }
+  list.innerHTML = html || `<div class="empty"><b>Ничего не найдено</b>Попробуйте другое название или адрес.</div>`;
+}
+
+// ---------- connection dock ----------
+
+function selectedServer() {
+  const st = state.status;
+  return state.servers.find((s) => s.id === (st.state === "disconnected" ? state.selected : st.serverId));
+}
+
+function renderDock() {
+  const st = state.status;
+  const srv = selectedServer();
+  $("#dock").dataset.state = st.state;
+
+  $("#status-word").textContent = {
+    connected: "Подключено", connecting: "Подключение…", disconnecting: "Отключение…", disconnected: "Отключено",
+  }[st.state];
+  $("#status-server").textContent = srv ? srv.name : "Сервер не выбран";
+
+  let detail = "";
+  if (st.state === "connected") {
+    detail = st.mode === "tun" ? "Весь трафик идёт через VPN" : `Прокси 127.0.0.1:${state.settings.httpPort}`;
+  } else if (srv?.subId) {
+    detail = subSummary(state.subscriptions.find((x) => x.id === srv.subId));
+    if (detail) detail = "Подписка: " + detail;
+  }
+  $("#status-detail").textContent = detail;
+  $("#status-error").textContent =
+    st.error === "need_admin" ? "Для режима «Весь трафик» нужны права администратора" :
+    st.error === "need_ovpn_auth" ? "Введите логин и пароль OpenVPN" : st.error || "";
+
+  const power = $("#power");
+  power.textContent = { connected: "Отключить", connecting: "Подключение…", disconnecting: "Отключение…", disconnected: "Подключить" }[st.state];
+  power.disabled = st.state === "connecting" || st.state === "disconnecting";
+  $("#test-btn").disabled = st.state !== "connected";
+
+  // WireGuard, AmneziaWG and OpenVPN are full tunnels: always "Весь трафик".
+  const fullTunnel = !!(srv?.wg || srv?.ovpn);
+  const mode = fullTunnel ? "tun" : state.settings.mode;
+  $$("#mode-seg button").forEach((b) => {
+    b.setAttribute("aria-checked", String(b.dataset.mode === mode));
+    const locked = fullTunnel && b.dataset.mode === "proxy";
+    b.disabled = locked;
+    b.title = locked ? "WireGuard, AmneziaWG и OpenVPN работают только в режиме «Весь трафик»" : "";
+  });
+  $("#admin-proxy").hidden = fullTunnel;
+
+  const foot = [upd?.current && upd.current !== "dev" ? "Версия " + bareVersion(upd.current) : "Версия для разработки"];
+  if (st.admin) foot.push("права администратора");
+  $("#dock-foot").textContent = foot.join(", ");
+}
+
+// ---------- subscriptions ----------
+
 function trafficBlock(sub) {
-  if (!sub.hasUserInfo) return `<div class="sub-line muted">Провайдер не сообщает расход трафика</div>`;
+  if (!sub.hasUserInfo) return `<p class="sub-foot">Провайдер не сообщает расход трафика.</p>`;
   const used = sub.upload + sub.download;
-  const detail = `↑ ${fmtBytes(sub.upload)} · ↓ ${fmtBytes(sub.download)}`;
   if (!sub.total) {
-    return `<div class="sub-line"><b>Безлимитный трафик</b> <span class="muted">· использовано ${fmtBytes(used)} (${detail})</span></div>`;
+    return `<div class="traffic-line"><b>Безлимитный трафик</b><span class="muted">использовано ${fmtBytes(used)}</span></div>`;
   }
   const left = Math.max(0, sub.total - used);
   const pct = Math.min(100, (used / sub.total) * 100);
   const cls = pct >= 90 ? "bad" : pct >= 70 ? "mid" : "";
   return `
-    <div class="sub-line"><b>Осталось ${fmtBytes(left)}</b> <span class="muted">из ${fmtBytes(sub.total)} · использовано ${fmtBytes(used)} (${detail})</span></div>
-    <div class="bar ${cls}"><div style="width:${pct.toFixed(1)}%"></div></div>`;
+    <div class="traffic">
+      <div class="traffic-line"><b>Осталось ${fmtBytes(left)}</b><span class="muted">из ${fmtBytes(sub.total)}</span></div>
+      <div class="meter ${cls}"><span style="width:${pct.toFixed(1)}%"></span></div>
+    </div>`;
 }
 
-function expireBlock(sub) {
-  if (!sub.hasUserInfo && !sub.expire) return "";
-  if (!sub.expire) return `<div class="sub-line">Бессрочно</div>`;
+function expireLine(sub) {
+  if (!sub.expire) return sub.hasUserInfo ? "Бессрочно" : "";
   const date = new Date(sub.expire * 1000).toLocaleDateString("ru-RU", { day: "numeric", month: "long", year: "numeric" });
-  const days = daysLeft(sub);
-  if (days <= 0) return `<div class="sub-line bad-text">Истекла ${date}</div>`;
-  const cls = days <= 3 ? "bad-text" : days <= 7 ? "mid-text" : "";
-  return `<div class="sub-line ${cls}">Действует до ${date} · ещё ${days} ${plural(days, "день", "дня", "дней")}</div>`;
+  const d = daysLeft(sub);
+  if (d <= 0) return `<span class="bad-text">Истекла ${date}</span>`;
+  const text = `Действует до ${date}, ещё ${d} ${plural(d, "день", "дня", "дней")}`;
+  return d <= 3 ? `<span class="bad-text">${text}</span>` : d <= 7 ? `<span class="warn">${text}</span>` : text;
 }
 
 function renderSubs() {
   const list = $("#sub-list");
   if (!state.subscriptions.length) {
-    list.innerHTML = `<div class="empty">Подписок нет. Вставьте URL подписки от вашего провайдера.</div>`;
+    list.innerHTML = `<div class="empty"><b>Подписок пока нет</b>Вставьте ссылку на подписку от провайдера — серверы и остаток трафика будут обновляться сами.</div>`;
     return;
   }
   list.innerHTML = state.subscriptions.map((s) => {
     const count = state.servers.filter((x) => x.subId === s.id).length;
-    const every = s.updateInterval || 12;
+    const expire = expireLine(s);
     return `
-      <div class="sub-card" data-id="${s.id}">
+      <article class="sub" data-id="${s.id}">
         <div class="sub-head">
-          <div class="item-main">
+          <div>
             <div class="sub-title">${esc(subTitle(s))}</div>
-            <div class="item-sub">${esc(s.url)}</div>
+            <div class="sub-url">${esc(s.url)}</div>
           </div>
-          <div class="sub-buttons">
-            ${s.webPageUrl ? `<button class="btn small" data-act="open" data-url="${esc(s.webPageUrl)}">Сайт</button>` : ""}
-            ${s.supportUrl ? `<button class="btn small" data-act="open" data-url="${esc(s.supportUrl)}">Поддержка</button>` : ""}
-            <button class="btn small" data-act="update">Обновить</button>
-            <button class="btn small" data-act="rename">Переименовать</button>
-            <button class="btn small danger" data-act="del">Удалить</button>
+          <div class="sub-actions">
+            ${s.webPageUrl ? `<button class="btn ghost small" data-act="open" data-url="${esc(s.webPageUrl)}">Сайт</button>` : ""}
+            ${s.supportUrl ? `<button class="btn ghost small" data-act="open" data-url="${esc(s.supportUrl)}">Поддержка</button>` : ""}
+            <button class="btn ghost small" data-act="update">Обновить</button>
+            <button class="btn ghost small" data-act="rename">Переименовать</button>
+            <button class="btn ghost small" data-act="del">Удалить</button>
           </div>
         </div>
-        ${s.announce ? `<div class="announce">${esc(s.announce)}</div>` : ""}
+        ${s.announce ? `<p class="announce">${esc(s.announce)}</p>` : ""}
         ${trafficBlock(s)}
-        ${expireBlock(s)}
-        <div class="sub-line muted">${count} ${plural(count, "сервер", "сервера", "серверов")} · обновлено ${fmtDate(s.updated)} · автообновление каждые ${every} ч</div>
-        ${s.lastError ? `<div class="sub-line bad-text">Ошибка последнего обновления: ${esc(s.lastError)}</div>` : ""}
-      </div>`;
+        ${expire ? `<p>${expire}</p>` : ""}
+        <p class="sub-foot">${count} ${plural(count, "сервер", "сервера", "серверов")}, обновлено ${s.updated ? fmtDate(s.updated) : "ещё не обновлялась"}, автообновление каждые ${s.updateInterval || 12} ч</p>
+        ${s.lastError ? `<p class="sub-foot bad-text">Не удалось обновить: ${esc(s.lastError)}</p>` : ""}
+      </article>`;
   }).join("");
 }
+
+// ---------- settings ----------
 
 function fillSettings() {
   const f = $("#settings-form");
@@ -257,10 +277,27 @@ function fillSettings() {
   f.httpPort.value = s.httpPort;
   f.dns.value = (s.dns || []).join(", ");
   f.bypassRu.checked = s.bypassRu;
-  f.sound.checked = !s.soundOff;
+  f.sound.checked = s.sound;
   f.autoConnect.checked = s.autoConnect;
-  api().GetAutostart().then(renderAutostart);
+  f.updateCheck.checked = !s.noUpdateCheck;
   f.logLevel.value = s.logLevel;
+  api().GetAutostart().then(renderAutostart);
+  renderUpdate();
+}
+
+function readSettings() {
+  const f = $("#settings-form");
+  return {
+    mode: f.mode.value,
+    socksPort: Number(f.socksPort.value),
+    httpPort: Number(f.httpPort.value),
+    dns: f.dns.value.split(/[,\s]+/).filter(Boolean),
+    bypassRu: f.bypassRu.checked,
+    sound: f.sound.checked,
+    autoConnect: f.autoConnect.checked,
+    noUpdateCheck: !f.updateCheck.checked,
+    logLevel: f.logLevel.value,
+  };
 }
 
 function renderAutostart(st) {
@@ -269,17 +306,58 @@ function renderAutostart(st) {
   hint.classList.remove("warn");
   if (!st.enabled) {
     hint.textContent = st.admin
-      ? "Клиент будет запускаться с правами администратора, без запроса UAC — TUN тоже заработает."
-      : "Сейчас клиент запущен без прав администратора: автозапуск будет работать только в режиме системного прокси. Для TUN включите автозапуск, запустив Vlessia от администратора.";
+      ? "Клиент будет запускаться сразу в трей с правами администратора — без окна UAC, все режимы работают."
+      : "Клиент запущен без прав администратора, поэтому при автозапуске будет работать только режим «Прокси». Чтобы работал «Весь трафик», запустите Vlessia от имени администратора и включите автозапуск.";
   } else if (st.elevated) {
-    hint.textContent = "Запускается с правами администратора (через Планировщик заданий): работают все режимы.";
+    hint.textContent = "Запускается сразу в трей с правами администратора, все режимы работают.";
   } else {
-    hint.textContent = "Запускается без прав администратора: TUN, WireGuard, AmneziaWG и OpenVPN не подключатся автоматически. Чтобы исправить, запустите Vlessia от администратора и включите автозапуск заново.";
+    hint.textContent = "Запускается без прав администратора: «Весь трафик», WireGuard, AmneziaWG и OpenVPN не подключатся сами. Запустите Vlessia от имени администратора и включите автозапуск заново.";
     hint.classList.add("warn");
   }
 }
 
-// ---------- actions ----------
+// ---------- updates ----------
+
+function renderUpdate() {
+  if (!upd) return;
+  const banner = $("#update-banner");
+  const busy = upd.state === "downloading" || upd.state === "installing";
+  banner.hidden = !(upd.state === "available" || busy);
+  if (!banner.hidden) {
+    const v = bareVersion(upd.latest);
+    $("#update-text").textContent =
+      upd.state === "downloading" ? `Загружаю версию ${v}…` :
+      upd.state === "installing" ? `Устанавливаю версию ${v}, клиент перезапустится` :
+      `Доступна версия ${v}`;
+    $("#update-bar").hidden = !busy;
+    $("#update-progress").style.width = Math.round((upd.progress || 0) * 100) + "%";
+    banner.querySelector(".update-actions").hidden = busy;
+    $("#update-go").textContent = upd.installed ? "Обновить" : "Скачать";
+  }
+
+  const cur = upd.current === "dev" ? "Версия для разработки" : `Установлена версия ${bareVersion(upd.current)}.`;
+  const line = {
+    checking: "Проверяю…",
+    latest: "Это последняя версия.",
+    available: `Доступна версия ${bareVersion(upd.latest)}.`,
+    downloading: "Загружаю обновление…",
+    installing: "Устанавливаю обновление…",
+    error: upd.error,
+  }[upd.state] || "";
+  $("#version-line").textContent = line ? `${cur} ${line}` : cur;
+  $("#check-update").disabled = upd.state === "checking" || busy;
+}
+
+async function applyUpdate() {
+  $("#update-go").disabled = true;
+  try {
+    await call("ApplyUpdate");
+  } catch { /* toast shown */ } finally {
+    $("#update-go").disabled = false;
+  }
+}
+
+// ---------- navigation & misc ----------
 
 async function refreshLogs() {
   const pre = $("#logs");
@@ -289,8 +367,8 @@ async function refreshLogs() {
 }
 
 function showView(name) {
-  document.querySelectorAll(".nav").forEach((b) => b.classList.toggle("active", b.dataset.view === name));
-  document.querySelectorAll(".view").forEach((v) => v.classList.toggle("active", v.id === "view-" + name));
+  $$(".tab").forEach((b) => b.classList.toggle("active", b.dataset.view === name));
+  $$(".view").forEach((v) => v.classList.toggle("active", v.id === "view-" + name));
   clearInterval(logsTimer);
   if (name === "settings") fillSettings();
   if (name === "logs") {
@@ -299,7 +377,7 @@ function showView(name) {
   }
 }
 
-// askCredentials asks for an OpenVPN login; connect=true reconnects after.
+// askCredentials asks for an OpenVPN login; connect=true connects after.
 function askCredentials(id, connect) {
   const srv = state.servers.find((s) => s.id === id);
   if (!srv) return;
@@ -312,46 +390,41 @@ function askCredentials(id, connect) {
   d.showModal();
 }
 
-async function importText(text) {
-  const n = await call("ImportText", text);
-  toast(`Добавлено серверов: ${n}`);
+const added = (n) => toast(`${n} ${plural(n, "сервер добавлен", "сервера добавлено", "серверов добавлено")}`);
+
+function render() {
+  if (!state) return;
+  renderDock();
+  renderServers();
+  renderSubs();
 }
 
 function bind() {
-  document.querySelectorAll(".nav").forEach((b) => b.addEventListener("click", () => showView(b.dataset.view)));
+  $$(".tab").forEach((b) => b.addEventListener("click", () => showView(b.dataset.view)));
 
   $("#power").addEventListener("click", () => call("Toggle").catch(() => {}));
-
-  document.querySelectorAll("#mode-seg button").forEach((b) =>
-    b.addEventListener("click", () => call("SetMode", b.dataset.mode).catch(() => {})));
+  $$("#mode-seg button").forEach((b) => b.addEventListener("click", () => call("SetMode", b.dataset.mode).catch(() => {})));
 
   $("#test-btn").addEventListener("click", async () => {
     const btn = $("#test-btn");
-    btn.textContent = "Проверка…";
+    btn.textContent = "Проверяю…";
     try {
       const ms = await call("TestConnection");
-      toast(`Интернет через VPN работает, задержка ${ms} мс`);
+      toast(`Соединение работает, задержка ${ms} мс`);
     } catch { /* toast shown */ } finally {
-      btn.textContent = "Проверить";
+      btn.textContent = "Проверить соединение";
     }
   });
 
-  $("#paste-btn").addEventListener("click", async () => {
-    const n = await call("ImportClipboard").catch(() => null);
-    if (n !== null) toast(`Добавлено серверов: ${n}`);
-  });
-
-  $("#file-btn").addEventListener("click", async () => {
-    const n = await call("ImportFile").catch(() => null);
-    if (n) toast(`Добавлено серверов: ${n}`);
-  });
-
+  $("#paste-btn").addEventListener("click", () => call("ImportClipboard").then(added).catch(() => {}));
   $("#add-btn").addEventListener("click", () => {
     $("#add-text").value = "";
     $("#add-dialog").showModal();
   });
   $("#add-dialog").addEventListener("close", () => {
-    if ($("#add-dialog").returnValue === "ok") importText($("#add-text").value).catch(() => {});
+    const v = $("#add-dialog").returnValue;
+    if (v === "ok" && $("#add-text").value.trim()) call("ImportText", $("#add-text").value).then(added).catch(() => {});
+    if (v === "file") call("ImportFile").then((n) => n && added(n)).catch(() => {});
   });
 
   $("#admin-dialog").addEventListener("close", () => {
@@ -365,43 +438,46 @@ function bind() {
     renderServers();
     api().PingAll();
   });
-
-  $("#update-subs-btn").addEventListener("click", async () => {
-    if (!state.subscriptions.length) return toast("Подписок нет", true);
-    await call("UpdateAllSubscriptions").then(() => toast("Подписки обновлены")).catch(() => {});
+  $("#update-subs-btn").addEventListener("click", () => {
+    if (!state.subscriptions.length) return toast("Подписок пока нет — добавьте их на вкладке «Подписки»", true);
+    call("UpdateAllSubscriptions").then(() => toast("Подписки обновлены")).catch(() => {});
   });
-
   $("#search").addEventListener("input", renderServers);
 
-  $("#server-list").addEventListener("click", (e) => {
-    const item = e.target.closest(".item");
-    if (!item) return;
-    const id = item.dataset.id;
+  const list = $("#server-list");
+  list.addEventListener("click", (e) => {
+    const row = e.target.closest(".row");
+    if (!row) return;
+    const id = row.dataset.id;
     const act = e.target.closest("[data-act]")?.dataset.act;
     if (act === "copy") {
       const isConf = !state.servers.find((x) => x.id === id)?.link.includes("://");
       return call("CopyLink", id).then(() => toast(isConf ? "Конфигурация скопирована" : "Ссылка скопирована")).catch(() => {});
     }
-    if (act === "del") return call("DeleteServer", id).catch(() => {});
+    if (act === "del") return call("DeleteServer", id).then(() => toast("Сервер удалён")).catch(() => {});
     if (act === "login") return askCredentials(id, false);
     if (id !== state.selected) call("SelectServer", id).catch(() => {});
   });
-
-  $("#server-list").addEventListener("dblclick", (e) => {
-    const item = e.target.closest(".item");
-    if (item && !e.target.closest("[data-act]") && state.status.state === "disconnected") {
-      call("SelectServer", item.dataset.id).then(() => call("Connect")).catch(() => {});
+  list.addEventListener("dblclick", (e) => {
+    const row = e.target.closest(".row");
+    if (row && !e.target.closest("[data-act]") && state.status.state === "disconnected") {
+      call("SelectServer", row.dataset.id).then(() => call("Connect")).catch(() => {});
     }
   });
+  list.addEventListener("keydown", (e) => {
+    const row = e.target.closest(".row");
+    if (row && e.key === "Enter") call("SelectServer", row.dataset.id).catch(() => {});
+  });
 
-  $("#sub-add").addEventListener("click", async () => {
+  $("#sub-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
     const url = $("#sub-url").value.trim();
     if (!url) return;
     const btn = $("#sub-add");
     btn.disabled = true;
     try {
       const n = await call("AddSubscription", $("#sub-name").value.trim(), url);
-      toast(`Подписка добавлена, серверов: ${n}`);
+      toast(`Подписка добавлена: ${n} ${plural(n, "сервер", "сервера", "серверов")}`);
       $("#sub-url").value = "";
       $("#sub-name").value = "";
     } catch { /* toast shown */ } finally {
@@ -411,11 +487,11 @@ function bind() {
 
   $("#sub-list").addEventListener("click", async (e) => {
     const btn = e.target.closest("[data-act]");
-    const id = e.target.closest(".sub-card")?.dataset.id;
+    const id = e.target.closest(".sub")?.dataset.id;
     if (!btn || !id) return;
     const act = btn.dataset.act;
     if (act === "open") return api().OpenURL(btn.dataset.url);
-    if (act === "del") return call("DeleteSubscription", id).catch(() => {});
+    if (act === "del") return call("DeleteSubscription", id).then(() => toast("Подписка удалена")).catch(() => {});
     if (act === "rename") {
       const sub = state.subscriptions.find((s) => s.id === id);
       $("#rename-input").value = sub.name || "";
@@ -426,7 +502,7 @@ function bind() {
     btn.disabled = true;
     try {
       const n = await call("UpdateSubscription", id);
-      toast(`Обновлено, серверов: ${n}`);
+      toast(`Подписка обновлена: ${n} ${plural(n, "сервер", "сервера", "серверов")}`);
     } catch { /* toast shown */ } finally {
       btn.disabled = false;
     }
@@ -439,32 +515,32 @@ function bind() {
     if (d.dataset.connect === "1") p.then(() => call("Connect")).catch(() => {});
     else p.then(() => toast("Логин сохранён")).catch(() => {});
   });
-
   $("#rename-dialog").addEventListener("close", () => {
     const d = $("#rename-dialog");
     if (d.returnValue === "ok") call("RenameSubscription", d.dataset.id, $("#rename-input").value).catch(() => {});
   });
 
-  $("#settings-form").addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const f = e.target;
-    const s = {
-      mode: f.mode.value,
-      socksPort: Number(f.socksPort.value),
-      httpPort: Number(f.httpPort.value),
-      dns: f.dns.value.split(/[,\s]+/).filter(Boolean),
-      bypassRu: f.bypassRu.checked,
-      soundOff: !f.sound.checked,
-      autoConnect: f.autoConnect.checked,
-      logLevel: f.logLevel.value,
-    };
-    await call("SaveSettings", s).then(() => toast("Настройки сохранены")).catch(() => {});
+  // Settings save as soon as a field changes.
+  $("#settings-form").addEventListener("submit", (e) => e.preventDefault());
+  $("#settings-form").addEventListener("change", (e) => {
+    if (e.target.id === "autostart") return;
+    call("SaveSettings", readSettings()).then(() => toast("Сохранено")).catch(() => fillSettings());
   });
-
-  $("#open-dir").addEventListener("click", () => api().OpenDataDir());
   $("#autostart").addEventListener("change", (e) =>
     call("SetAutostart", e.target.checked).then(renderAutostart).catch(() => api().GetAutostart().then(renderAutostart)));
+  $("#open-dir").addEventListener("click", () => api().OpenDataDir());
   $("#logs-refresh").addEventListener("click", refreshLogs);
+
+  $("#check-update").addEventListener("click", () => call("CheckUpdate").catch(() => {}));
+  $("#update-go").addEventListener("click", applyUpdate);
+  $("#update-notes").addEventListener("click", () => {
+    $("#notes-title").textContent = `Что нового в версии ${bareVersion(upd.latest)}`;
+    $("#notes-body").textContent = upd.notes || "Описание изменений не опубликовано.";
+    $("#notes-dialog").showModal();
+  });
+  $("#notes-dialog").addEventListener("close", () => {
+    if ($("#notes-dialog").returnValue === "update") applyUpdate();
+  });
 
   window.runtime.EventsOn("state", (s) => {
     const prevError = state?.status.error;
@@ -479,16 +555,21 @@ function bind() {
   });
   window.runtime.EventsOn("ping", (p) => {
     pings[p.id] = p.ms;
-    const item = document.querySelector(`#server-list .item[data-id="${p.id}"] .ping`);
-    if (item) item.outerHTML = pingCell(p.id);
+    const cell = document.querySelector(`#server-list .row[data-id="${p.id}"] .ping`);
+    if (cell) cell.outerHTML = pingCell(p.id);
+  });
+  window.runtime.EventsOn("update", (u) => {
+    upd = u;
+    renderUpdate();
+    if (state) renderDock();
   });
 }
 
 async function init() {
   bind();
-  state = await api().GetState();
+  [state, upd] = await Promise.all([api().GetState(), api().GetUpdate()]);
   render();
-  $("#version").textContent = "Vlessia " + (await api().GetVersion());
+  renderUpdate();
 }
 
 // Wails injects its runtime asynchronously; wait until bindings are ready.

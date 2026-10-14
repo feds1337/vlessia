@@ -8,7 +8,7 @@
 
 VLESS · Hysteria 2 · AmneziaWG · WireGuard · OpenVPN · Outline — в одном окне и одном `.exe`
 
-[![Release](https://img.shields.io/github/v/release/feds1337/vlessia?style=for-the-badge&color=22c55e&label=версия)](https://github.com/feds1337/vlessia/releases/latest)
+[![Release](https://img.shields.io/github/v/release/feds1337/vlessia?style=for-the-badge&color=0e7c86&label=версия)](https://github.com/feds1337/vlessia/releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/feds1337/vlessia/total?style=for-the-badge&color=0ea5e9&label=загрузки)](https://github.com/feds1337/vlessia/releases)
 [![Windows](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4?style=for-the-badge&logo=windows11&logoColor=white)](#-установка)
 [![License](https://img.shields.io/github/license/feds1337/vlessia?style=for-the-badge&color=a855f7&label=лицензия)](LICENSE)
@@ -31,8 +31,8 @@ VLESS · Hysteria 2 · AmneziaWG · WireGuard · OpenVPN · Outline — в од�
 Скопировали ссылку или подписку → «Вставить из буфера» → большая кнопка. Всё.
 
 ### 🛡️ Два режима
-**Системный прокси** — без прав администратора, для браузеров и большинства программ.
-**TUN** — весь трафик системы, включая игры и консольные утилиты.
+**Прокси** — без прав администратора, для браузеров и большинства программ.
+**Весь трафик** — вся система через VPN, включая игры и консольные утилиты.
 
 ### 📦 Подписки как надо
 Остаток гигабайт, срок действия, анонсы провайдера, ссылки на поддержку, автообновление.
@@ -44,10 +44,13 @@ VLESS · Hysteria 2 · AmneziaWG · WireGuard · OpenVPN · Outline — в од�
 От VLESS REALITY до AmneziaWG 3.1 и OpenVPN — без установки сторонних программ.
 
 ### 🏁 Запуск вместе с Windows
-Автозапуск сразу в трей и автоподключение — даже для TUN, без окна UAC.
+Автозапуск сразу в трей и автоподключение — даже в режиме «Весь трафик», без окна UAC.
+
+### 🔄 Обновляется сам
+Находит новую версию на GitHub, проверяет контрольную сумму и ставит её в один клик.
 
 ### 🎨 Приятные мелочи
-Флаги стран, пинг серверов, скорость в реальном времени, тёмная тема, значок в трее. И звук при подключении 💨 (выключается в настройках).
+Флаги стран, пинг серверов, скорость в реальном времени, светлая и тёмная тема вслед за Windows, значок в трее. И звук при подключении 💨 — включается в настройках.
 
 </td>
 </tr>
@@ -86,21 +89,27 @@ VLESS · Hysteria 2 · AmneziaWG · WireGuard · OpenVPN · Outline — в од�
 ## ❓ Вопросы и ответы
 
 <details>
-<summary><b>Прокси или TUN — что выбрать?</b></summary>
+<summary><b>«Прокси» или «Весь трафик» — что выбрать?</b></summary>
 
-**Системный прокси** подходит для браузеров, мессенджеров и большинства программ и не требует прав администратора. **TUN** создаёт виртуальный сетевой адаптер и заворачивает в VPN вообще весь трафик — игры, торренты, консольные утилиты. WireGuard, AmneziaWG и OpenVPN всегда работают в режиме TUN.
+**Прокси** подходит для браузеров, мессенджеров и большинства программ и не требует прав администратора. **Весь трафик** создаёт виртуальный сетевой адаптер (TUN) и заворачивает в VPN вообще всё — игры, торренты, консольные утилиты. WireGuard, AmneziaWG и OpenVPN всегда работают в этом режиме.
 </details>
 
 <details>
 <summary><b>Почему клиент просит права администратора?</b></summary>
 
-Только для режима TUN: создавать сетевые адаптеры и менять маршруты Windows разрешает лишь администратору. Клиент сам предложит перезапуститься с нужными правами. Режиму прокси права не нужны.
+Только для режима «Весь трафик»: создавать сетевые адаптеры и менять маршруты Windows разрешает лишь администратору. Клиент сам предложит перезапуститься с нужными правами. Режиму «Прокси» права не нужны.
 </details>
 
 <details>
 <summary><b>Как сделать, чтобы VPN включался сам при входе в Windows?</b></summary>
 
-Запустите Vlessia от имени администратора, откройте **Настройки → Запуск** и включите «Запускать вместе с Windows» и «Подключаться при запуске». Клиент будет стартовать сразу в трей с правами администратора и без окна UAC, так что заработает и TUN.
+Запустите Vlessia от имени администратора, откройте **Настройки → Запуск** и включите «Запускать вместе с Windows» и «Подключаться при запуске». Клиент будет стартовать сразу в трей с правами администратора и без окна UAC, так что заработает и режим «Весь трафик».
+</details>
+
+<details>
+<summary><b>Как обновить клиент?</b></summary>
+
+Ничего делать не нужно: клиент проверяет GitHub после запуска и раз в 6 часов. Когда выходит новая версия, в левой колонке появляется «Доступна версия…» — нажмите «Обновить». Клиент скачает установщик, сверит контрольную сумму, обновится и перезапустится, а если VPN был включён — подключится снова. Автопроверку можно выключить в настройках. Portable-версия вместо этого откроет страницу релиза.
 </details>
 
 <details>
@@ -141,6 +150,7 @@ wails build -clean -trimpath -ldflags "-s -w" -nsis
 - [go-openvpn](https://github.com/n0madic/go-openvpn) — OpenVPN (AGPL-3.0)
 - [Wails](https://wails.io) — десктопная оболочка (MIT)
 - [Wintun](https://www.wintun.net/) — драйвер TUN, © WireGuard LLC, распространяется по [лицензии Prebuilt Binaries](internal/tun/wintun-LICENSE.txt) и используется только через штатный API
+- [Onest](https://github.com/simpals/onest) — шрифт интерфейса (SIL OFL 1.1, текст в `frontend/dist/fonts/Onest-LICENSE.txt`)
 - [Twemoji Country Flags](https://github.com/talkjs/country-flag-emoji-polyfill) — флаги (MIT; изображения [Twemoji](https://github.com/twitter/twemoji), © Twitter, Inc. и др., [CC-BY 4.0](https://creativecommons.org/licenses/by/4.0/), полный текст в `frontend/dist/fonts/`)
 
 ## 📄 Лицензия

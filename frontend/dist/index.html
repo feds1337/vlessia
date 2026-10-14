@@ -7,166 +7,206 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <aside class="sidebar">
+  <aside class="dock" id="dock" data-state="disconnected">
     <div class="brand">
-      <svg viewBox="0 0 32 32" class="brand-logo"><path d="M3 2h26v13c0 8-7 12-13 15C10 27 3 23 3 15z"/><circle cx="16" cy="13" r="3.5" fill="#0f1115"/><rect x="14.4" y="13" width="3.2" height="9" fill="#0f1115"/></svg>
-      <span>Vlessia</span>
+      <svg viewBox="0 0 32 32" aria-hidden="true"><path d="M3 2h26v13c0 8-7 12-13 15C10 27 3 23 3 15z"/><circle cx="16" cy="13" r="3.5" class="cut"/><rect x="14.4" y="13" width="3.2" height="9" class="cut"/></svg>
+      Vlessia
     </div>
-    <nav>
-      <button class="nav active" data-view="servers">Серверы</button>
-      <button class="nav" data-view="subs">Подписки</button>
-      <button class="nav" data-view="settings">Настройки</button>
-      <button class="nav" data-view="logs">Логи</button>
-    </nav>
-    <div class="sidebar-foot"><div id="admin-badge"></div><div id="version"></div></div>
+
+    <div class="status" aria-live="polite">
+      <p class="status-word" id="status-word">Отключено</p>
+      <p class="status-server" id="status-server">Сервер не выбран</p>
+      <p class="status-detail" id="status-detail"></p>
+      <p class="status-error" id="status-error"></p>
+    </div>
+
+    <dl class="meters">
+      <div><dt>Отправка</dt><dd id="up">0 Б/с</dd></div>
+      <div><dt>Получение</dt><dd id="down">0 Б/с</dd></div>
+    </dl>
+
+    <div class="dock-actions">
+      <div class="mode" id="mode-seg" role="radiogroup" aria-label="Режим">
+        <button role="radio" data-mode="proxy">Прокси</button>
+        <button role="radio" data-mode="tun">Весь трафик</button>
+      </div>
+      <button class="toggle" id="power">Подключить</button>
+      <button class="dock-link" id="test-btn">Проверить соединение</button>
+    </div>
+
+    <div class="update" id="update-banner" hidden>
+      <p id="update-text"></p>
+      <div class="update-bar" id="update-bar" hidden><span id="update-progress"></span></div>
+      <div class="update-actions">
+        <button class="update-go" id="update-go">Обновить</button>
+        <button class="dock-link" id="update-notes">Что нового</button>
+      </div>
+    </div>
+
+    <p class="dock-foot" id="dock-foot"></p>
   </aside>
 
   <main>
-    <section class="conn" id="conn">
-      <button class="power" id="power" title="Подключить / отключить">
-        <svg viewBox="0 0 24 24"><path d="M12 3v8"/><path d="M6.3 7.3a8 8 0 1 0 11.4 0"/></svg>
-      </button>
-      <div class="conn-info">
-        <div class="conn-state" id="conn-state">Отключено</div>
-        <div class="conn-server" id="conn-server">Сервер не выбран</div>
-        <div class="conn-sub" id="conn-sub"></div>
-        <div class="conn-error" id="conn-error"></div>
-      </div>
-      <div class="conn-side">
-        <div class="seg" id="mode-seg">
-          <button data-mode="proxy">Системный прокси</button>
-          <button data-mode="tun">TUN</button>
-        </div>
-        <div class="speed">
-          <span title="Отправка">↑ <b id="up">0 Б/с</b></span>
-          <span title="Получение">↓ <b id="down">0 Б/с</b></span>
-          <button class="link" id="test-btn">Проверить</button>
-        </div>
-      </div>
-    </section>
+    <nav class="tabs" aria-label="Разделы">
+      <button class="tab active" data-view="servers">Серверы</button>
+      <button class="tab" data-view="subs">Подписки</button>
+      <button class="tab" data-view="settings">Настройки</button>
+      <button class="tab" data-view="logs">Журнал</button>
+    </nav>
 
     <section class="view active" id="view-servers">
-      <div class="toolbar">
+      <div class="bar">
+        <label class="search">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/></svg>
+          <input id="search" placeholder="Найти сервер" aria-label="Найти сервер">
+        </label>
+        <button class="btn ghost" id="ping-btn">Пинг</button>
+        <button class="btn ghost" id="update-subs-btn" title="Обновить все подписки">Обновить</button>
+        <button class="btn" id="add-btn">Добавить</button>
         <button class="btn primary" id="paste-btn">Вставить из буфера</button>
-        <button class="btn" id="add-btn">Добавить…</button>
-        <button class="btn" id="file-btn">Открыть файл…</button>
-        <button class="btn" id="ping-btn">Пинг</button>
-        <button class="btn" id="update-subs-btn" title="Обновить все подписки">Обновить</button>
-        <input class="search" id="search" placeholder="Поиск">
       </div>
       <div class="list" id="server-list"></div>
     </section>
 
     <section class="view" id="view-subs">
-      <div class="toolbar">
-        <input class="input grow" id="sub-url" placeholder="https://… ссылка на подписку">
-        <input class="input" id="sub-name" placeholder="Название (необязательно)">
-        <button class="btn primary" id="sub-add">Добавить</button>
-      </div>
+      <form class="bar" id="sub-form">
+        <input class="field-input grow" id="sub-url" placeholder="Ссылка на подписку, https://…" aria-label="Ссылка на подписку">
+        <input class="field-input" id="sub-name" placeholder="Название (необязательно)" aria-label="Название">
+        <button class="btn primary" id="sub-add" type="submit">Добавить подписку</button>
+      </form>
       <div class="list" id="sub-list"></div>
     </section>
 
     <section class="view" id="view-settings">
       <form class="settings" id="settings-form">
-        <div class="field">
-          <label>Режим</label>
-          <select name="mode">
-            <option value="proxy">Системный прокси — браузеры и большинство программ, права админа не нужны</option>
-            <option value="tun">TUN — весь трафик системы, нужны права администратора</option>
-          </select>
-        </div>
-        <div class="row">
-          <div class="field"><label>SOCKS5 порт</label><input class="input" name="socksPort" type="number" min="1" max="65535"></div>
-          <div class="field"><label>HTTP порт</label><input class="input" name="httpPort" type="number" min="1" max="65535"></div>
-        </div>
-        <div class="field">
-          <label>DNS-серверы (через запятую; первый также ставится на TUN-адаптер)</label>
-          <input class="input" name="dns">
-        </div>
-        <label class="check"><input type="checkbox" name="bypassRu"> Российские домены (.ru, .su, .рф) — напрямую, мимо VPN</label>
-        <label class="check"><input type="checkbox" name="sound"> Звук при подключении</label>
-        <div class="field">
-          <label>Запуск</label>
-          <label class="check"><input type="checkbox" id="autostart"> Запускать вместе с Windows (сразу в трей)</label>
-          <div class="hint" id="autostart-hint"></div>
-          <label class="check"><input type="checkbox" name="autoConnect"> Подключаться при запуске к выбранному серверу</label>
-        </div>
-        <div class="field">
-          <label>Уровень логов xray</label>
-          <select name="logLevel">
-            <option value="debug">debug</option>
-            <option value="info">info</option>
-            <option value="warning">warning</option>
-            <option value="error">error</option>
-            <option value="none">none</option>
-          </select>
-        </div>
-        <div class="actions">
-          <button class="btn primary" type="submit">Сохранить</button>
-          <button class="btn" type="button" id="open-dir">Открыть папку данных</button>
-        </div>
+        <section>
+          <h3>Подключение</h3>
+          <label class="row-field">
+            <span>Режим</span>
+            <select name="mode">
+              <option value="proxy">Прокси — браузеры и большинство программ</option>
+              <option value="tun">Весь трафик — нужны права администратора</option>
+            </select>
+          </label>
+          <label class="check"><input type="checkbox" name="bypassRu"> Российские сайты (.ru, .su, .рф) открывать напрямую</label>
+          <details class="more">
+            <summary>Дополнительно</summary>
+            <label class="row-field"><span>DNS-серверы</span><input class="field-input" name="dns" aria-describedby="dns-hint"></label>
+            <p class="hint" id="dns-hint">Через запятую. Первый также назначается адаптеру в режиме «Весь трафик».</p>
+            <div class="pair">
+              <label class="row-field"><span>Порт SOCKS5</span><input class="field-input" name="socksPort" type="number" min="1" max="65535"></label>
+              <label class="row-field"><span>Порт HTTP</span><input class="field-input" name="httpPort" type="number" min="1" max="65535"></label>
+            </div>
+          </details>
+        </section>
+
+        <section>
+          <h3>Запуск</h3>
+          <label class="check"><input type="checkbox" id="autostart"> Запускать вместе с Windows</label>
+          <p class="hint" id="autostart-hint"></p>
+          <label class="check"><input type="checkbox" name="autoConnect"> Подключаться к выбранному серверу при запуске</label>
+          <label class="check"><input type="checkbox" name="sound"> Звук при подключении</label>
+        </section>
+
+        <section>
+          <h3>Обновления</h3>
+          <label class="check"><input type="checkbox" name="updateCheck"> Проверять обновления автоматически</label>
+          <div class="inline">
+            <span class="muted" id="version-line"></span>
+            <button class="btn ghost" type="button" id="check-update">Проверить сейчас</button>
+          </div>
+        </section>
+
+        <section>
+          <h3>Журнал</h3>
+          <label class="row-field">
+            <span>Подробность журнала Xray</span>
+            <select name="logLevel">
+              <option value="error">Только ошибки</option>
+              <option value="warning">Предупреждения</option>
+              <option value="info">Подробно</option>
+              <option value="debug">Отладка</option>
+              <option value="none">Не вести</option>
+            </select>
+          </label>
+          <div class="inline">
+            <button class="btn ghost" type="button" id="open-dir">Открыть папку данных</button>
+          </div>
+        </section>
       </form>
     </section>
 
     <section class="view" id="view-logs">
-      <div class="toolbar">
-        <button class="btn" id="logs-refresh">Обновить</button>
-        <label class="check"><input type="checkbox" id="logs-auto" checked> Автообновление</label>
+      <div class="bar">
+        <label class="check"><input type="checkbox" id="logs-auto" checked> Обновлять автоматически</label>
+        <button class="btn ghost" id="logs-refresh">Обновить</button>
       </div>
       <pre class="logs" id="logs"></pre>
     </section>
   </main>
 
   <dialog id="add-dialog">
-    <form method="dialog" class="dialog">
-      <h3>Добавить серверы</h3>
-      <p class="muted">Вставьте ссылки vless://, vmess://, trojan://, ss://, hysteria2://, wireguard://, socks://, http://хост:порт (по одной на строку), ключ Outline ssconf://, ссылку vpn:// из AmneziaVPN, конфигурацию WireGuard / AmneziaWG ([Interface]…) или OpenVPN (.ovpn), либо URL подписки.</p>
-      <textarea id="add-text" rows="8" spellcheck="false"></textarea>
-      <div class="actions">
-        <button class="btn" value="cancel">Отмена</button>
-        <button class="btn primary" id="add-confirm" value="ok">Добавить</button>
+    <form method="dialog">
+      <h2>Добавить серверы</h2>
+      <p class="muted">Вставьте ссылки (по одной на строку), URL подписки или содержимое файла .conf / .ovpn.</p>
+      <textarea id="add-text" rows="7" spellcheck="false" aria-label="Ссылки"></textarea>
+      <div class="dialog-actions">
+        <button class="btn ghost left" value="file" id="add-file">Открыть файл…</button>
+        <button class="btn ghost" value="cancel">Отмена</button>
+        <button class="btn primary" value="ok">Добавить</button>
       </div>
     </form>
   </dialog>
 
   <dialog id="admin-dialog">
-    <form method="dialog" class="dialog">
-      <h3>Нужны права администратора</h3>
-      <p class="muted">Режим TUN (а WireGuard, AmneziaWG и OpenVPN работают только в нём) создаёт виртуальный сетевой адаптер и меняет маршруты — для этого Windows требует права администратора. Перезапустить клиент от имени администратора и подключиться?</p>
-      <div class="actions">
-        <button class="btn" value="cancel">Отмена</button>
-        <button class="btn" value="proxy" id="admin-proxy">Использовать прокси</button>
-        <button class="btn primary" value="restart" id="admin-restart">Перезапустить</button>
+    <form method="dialog">
+      <h2>Нужны права администратора</h2>
+      <p class="muted">Режим «Весь трафик» создаёт виртуальный сетевой адаптер — Windows разрешает это только администратору. WireGuard, AmneziaWG и OpenVPN работают только в этом режиме.</p>
+      <div class="dialog-actions">
+        <button class="btn ghost" value="cancel">Отмена</button>
+        <button class="btn ghost" value="proxy" id="admin-proxy">Подключить через прокси</button>
+        <button class="btn primary" value="restart">Перезапустить от администратора</button>
       </div>
     </form>
   </dialog>
 
   <dialog id="auth-dialog">
-    <form method="dialog" class="dialog">
-      <h3>Вход OpenVPN</h3>
-      <p class="muted">Профиль <b id="auth-server"></b> требует логин и пароль (auth-user-pass). Они сохранятся в настройках клиента.</p>
-      <input class="input" id="auth-user" placeholder="Логин" autocomplete="username">
-      <input class="input" id="auth-pass" type="password" placeholder="Пароль" autocomplete="current-password">
-      <div class="actions">
-        <button class="btn" value="cancel">Отмена</button>
+    <form method="dialog">
+      <h2>Вход OpenVPN</h2>
+      <p class="muted">Сервер <b id="auth-server"></b> просит логин и пароль. Они сохранятся в настройках клиента.</p>
+      <input class="field-input" id="auth-user" placeholder="Логин" autocomplete="username" aria-label="Логин">
+      <input class="field-input" id="auth-pass" type="password" placeholder="Пароль" autocomplete="current-password" aria-label="Пароль">
+      <div class="dialog-actions">
+        <button class="btn ghost" value="cancel">Отмена</button>
         <button class="btn primary" value="ok">Войти</button>
       </div>
     </form>
   </dialog>
 
   <dialog id="rename-dialog">
-    <form method="dialog" class="dialog">
-      <h3>Название подписки</h3>
-      <p class="muted">Оставьте пустым, чтобы использовать название от провайдера.</p>
-      <input class="input" id="rename-input">
-      <div class="actions">
-        <button class="btn" value="cancel">Отмена</button>
+    <form method="dialog">
+      <h2>Название подписки</h2>
+      <p class="muted">Оставьте пустым, чтобы показывать название от провайдера.</p>
+      <input class="field-input" id="rename-input" aria-label="Название">
+      <div class="dialog-actions">
+        <button class="btn ghost" value="cancel">Отмена</button>
         <button class="btn primary" value="ok">Сохранить</button>
       </div>
     </form>
   </dialog>
 
-  <div class="toasts" id="toasts"></div>
+  <dialog id="notes-dialog">
+    <form method="dialog">
+      <h2 id="notes-title">Что нового</h2>
+      <div class="notes" id="notes-body"></div>
+      <div class="dialog-actions">
+        <button class="btn ghost" value="cancel">Закрыть</button>
+        <button class="btn primary" value="update">Обновить</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div class="toasts" id="toasts" aria-live="polite"></div>
   <script src="app.js"></script>
 </body>
 </html>

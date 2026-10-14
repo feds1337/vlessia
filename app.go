@@ -73,6 +73,8 @@ type App struct {
 	autostarted    bool // launched by Windows logon
 	quitting       bool
 
+	upd updater
+
 	opMu sync.Mutex // serialises Connect/Disconnect
 
 	mu        sync.Mutex // guards the fields below
@@ -96,6 +98,7 @@ func (a *App) startup(ctx context.Context) {
 	a.upgradeServers()
 	a.tray = StartTray(a)
 	go a.autoUpdateLoop()
+	go a.updateLoop()
 	a.refreshAutostart()
 	var autoConnect bool
 	a.store.Read(func(d *store.Data) { autoConnect = d.Settings.AutoConnect })
@@ -650,12 +653,7 @@ func (a *App) UpdateAllSubscriptions() error {
 // fetch downloads a URL, going through the local proxy while connected so
 // that blocked subscription hosts remain reachable.
 func (a *App) fetch(rawURL string) (string, http.Header, error) {
-	tr := http.DefaultTransport.(*http.Transport).Clone()
-	tr.Proxy = nil
-	if p := a.localProxyURL(); p != nil {
-		tr.Proxy = http.ProxyURL(p)
-	}
-	client := &http.Client{Transport: tr, Timeout: 30 * time.Second}
+	client := a.httpClient(30 * time.Second)
 	req, err := http.NewRequest(http.MethodGet, rawURL, nil)
 	if err != nil {
 		return "", nil, err
@@ -690,11 +688,22 @@ func (a *App) SaveSettings(s store.Settings) error {
 		}
 	}
 	s.DNS = dns
-	if err := a.store.Update(func(d *store.Data) { d.Settings = s }); err != nil {
+	var old store.Settings
+	if err := a.store.Update(func(d *store.Data) { old, d.Settings = d.Settings, s }); err != nil {
 		return err
 	}
 	a.emitState()
+	if !affectsConnection(old, s) {
+		return nil
+	}
 	return a.reconnectIfActive()
+}
+
+// affectsConnection reports whether a settings change requires
+// reconnecting; sound, autostart or update options do not.
+func affectsConnection(a, b store.Settings) bool {
+	return a.Mode != b.Mode || a.SocksPort != b.SocksPort || a.HTTPPort != b.HTTPPort ||
+		a.BypassRU != b.BypassRU || a.LogLevel != b.LogLevel || strings.Join(a.DNS, ",") != strings.Join(b.DNS, ",")
 }
 
 // SetMode switches between system proxy and TUN.
@@ -786,7 +795,7 @@ func (a *App) Connect() error {
 	a.mu.Unlock()
 	go a.statsLoop(inst, stop)
 	a.log.Printf("подключено: %s (%s), режим %s", srv.Name, srv.Address, settings.Mode)
-	if !settings.SoundOff {
+	if settings.Sound {
 		sound.PlayConnected()
 	}
 	a.setStatus(func(s *Status) {

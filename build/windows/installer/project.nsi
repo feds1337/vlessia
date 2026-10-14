@@ -93,6 +93,23 @@ Function .onInit
    !insertmacro wails.checkArchitecture
 FunctionEnd
 
+# Vlessia: the in-app updater runs "setup.exe /S --relaunch [--connect]";
+# start the new version afterwards (and reconnect if it was connected).
+!include "FileFunc.nsh"
+Function .onInstSuccess
+    ${GetParameters} $R0
+    ClearErrors
+    ${GetOptions} $R0 "--relaunch" $R1
+    IfErrors done
+    ClearErrors
+    ${GetOptions} $R0 "--connect" $R1
+    IfErrors 0 +3
+        Exec '"$INSTDIR\${PRODUCT_EXECUTABLE}"'
+        Goto done
+    Exec '"$INSTDIR\${PRODUCT_EXECUTABLE}" --connect'
+    done:
+FunctionEnd
+
 # Vlessia: a running client locks its executable; close it before
 # installing over it or removing it.
 !macro vlessia.closeRunning

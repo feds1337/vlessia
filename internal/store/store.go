@@ -41,9 +41,12 @@ type Settings struct {
 	BypassRU  bool     `json:"bypassRu"`
 	DNS       []string `json:"dns"`
 	LogLevel  string   `json:"logLevel"`
-	// SoundOff disables the connection sound (stored inverted so that it is
-	// on for existing configs).
-	SoundOff bool `json:"soundOff"`
+	// Sound plays the connection sound. Off by default; it replaced the old
+	// "soundOff" key, so existing configs start with the sound off too.
+	Sound bool `json:"sound"`
+	// NoUpdateCheck disables the automatic check for new releases (stored
+	// inverted so that checking is on by default).
+	NoUpdateCheck bool `json:"noUpdateCheck"`
 	// AutoConnect connects to the selected server when the client starts.
 	AutoConnect bool `json:"autoConnect"`
 }

@@ -15,6 +15,7 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
 	"github.com/wailsapp/wails/v2/pkg/options/windows"
 	xwin "golang.org/x/sys/windows"
+	"golang.org/x/sys/windows/registry"
 
 	"github.com/feds1337/vlessia/internal/autostart"
 	"github.com/feds1337/vlessia/internal/store"
@@ -67,7 +68,7 @@ func main() {
 		Height:           640,
 		MinWidth:         760,
 		MinHeight:        520,
-		BackgroundColour: &options.RGBA{R: 15, G: 17, B: 21, A: 255},
+		BackgroundColour: windowBackground(),
 		AssetServer:      &assetserver.Options{Assets: assets},
 		StartHidden:      *autostarted,
 		OnStartup:        app.startup,
@@ -79,7 +80,7 @@ func main() {
 		},
 		Bind: []any{app},
 		Windows: &windows.Options{
-			Theme: windows.Dark,
+			Theme: windows.SystemDefault,
 		},
 	})
 	if err != nil {
@@ -103,6 +104,19 @@ func runCleanup() {
 	if saved != nil && sysproxy.Set(*saved) == nil {
 		_ = st.Update(func(d *store.Data) { d.SavedProxy = nil })
 	}
+}
+
+// windowBackground matches the UI's paper colour for the Windows app theme,
+// so the window does not flash white before the page loads in dark mode.
+func windowBackground() *options.RGBA {
+	k, err := registry.OpenKey(registry.CURRENT_USER, `Software\Microsoft\Windows\CurrentVersion\Themes\Personalize`, registry.QUERY_VALUE)
+	if err == nil {
+		defer k.Close()
+		if v, _, err := k.GetIntegerValue("AppsUseLightTheme"); err == nil && v == 0 {
+			return &options.RGBA{R: 0x15, G: 0x18, B: 0x1e, A: 255}
+		}
+	}
+	return &options.RGBA{R: 0xf5, G: 0xf6, B: 0xf8, A: 255}
 }
 
 func openLog(dir string) *log.Logger {

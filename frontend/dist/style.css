@@ -70,6 +70,9 @@
 
 * { box-sizing: border-box; }
 
+/* Class display rules must not override the hidden attribute. */
+[hidden] { display: none !important; }
+
 html, body {
   margin: 0;
   height: 100%;
@@ -515,3 +518,18 @@ dialog h2 { margin: 0; font-size: 18px; font-weight: 650; letter-spacing: -.01em
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; }
 }
+
+/* ---------- first run ---------- */
+
+.empty-bot { margin-top: 14px; }
+.text-link {
+  border: 0;
+  background: none;
+  padding: 0;
+  color: var(--lagoon);
+  font-weight: 550;
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, currentColor 35%, transparent);
+  text-underline-offset: 3px;
+}
+.text-link:hover { text-decoration-color: currentColor; }

@@ -66,6 +66,9 @@
         <button class="btn ghost icon" id="update-subs-btn" title="Обновить все подписки" aria-label="Обновить все подписки">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 0 0-14.3-4.9L4 8M4 4v4h4M4 13a8 8 0 0 0 14.3 4.9L20 16M20 20v-4h-4"/></svg>
         </button>
+        <button class="btn ghost icon" id="qr-btn" title="Найти QR-код сервера или подписки на экране" aria-label="Добавить по QR-коду">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h2.5v2.5H14zM17.5 17.5H20V20h-2.5zM14 20h1M20 14v1"/></svg>
+        </button>
         <button class="btn" id="add-btn">Добавить</button>
         <button class="btn primary" id="paste-btn" title="Добавить ссылку или подписку из буфера обмена">Вставить</button>
       </div>
@@ -152,7 +155,7 @@
   <dialog id="add-dialog">
     <form method="dialog">
       <h2>Добавить серверы</h2>
-      <p class="muted">Вставьте ссылки (по одной на строку), URL подписки или содержимое файла .conf / .ovpn.</p>
+      <p class="muted">Вставьте ссылки (по одной на строку), URL подписки или содержимое файла .conf / .ovpn. Файл может быть и картинкой с QR-кодом.</p>
       <textarea id="add-text" rows="7" spellcheck="false" aria-label="Ссылки"></textarea>
       <div class="dialog-actions">
         <button class="btn ghost left" value="file" id="add-file">Открыть файл…</button>
@@ -206,6 +209,17 @@
       <div class="dialog-actions">
         <button class="btn ghost" value="cancel">Закрыть</button>
         <button class="btn primary" value="update">Обновить</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="welcome-dialog">
+    <form method="dialog">
+      <h2>Бесплатный VPN навсегда</h2>
+      <p class="muted">Нет своего сервера? Получите бесплатный VPN навсегда в Telegram-боте <b>@v4hood_bot</b>, а затем добавьте его в Vlessia кнопкой «Вставить».</p>
+      <div class="dialog-actions">
+        <button class="btn ghost" value="cancel">Не сейчас</button>
+        <button class="btn primary" value="bot">Открыть бота</button>
       </div>
     </form>
   </dialog>

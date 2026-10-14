@@ -60,6 +60,10 @@ type Data struct {
 	// SavedProxy holds the user's proxy settings while ours are active, so
 	// they can be restored even after a crash.
 	SavedProxy *sysproxy.State `json:"savedProxy,omitempty"`
+
+	// WelcomeSeen: the first-run offer (a free VPN from the Telegram bot)
+	// has been shown.
+	WelcomeSeen bool `json:"welcomeSeen,omitempty"`
 }
 
 type Store struct {

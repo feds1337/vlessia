@@ -40,6 +40,7 @@ func (i *Instance) Close() error {
 	if i.core == nil {
 		return nil
 	}
+	closeTunStack(i.core)
 	err := i.core.Close()
 	i.core = nil
 	resetHysteria()

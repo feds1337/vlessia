@@ -66,6 +66,9 @@ function plural(n, one, few, many) {
 
 const bareVersion = (v) => String(v || "").replace(/^v/, "");
 
+// The Telegram bot offered on first run and when there are no servers.
+const BOT_URL = "https://t.me/v4hood_bot";
+
 // ---------- servers ----------
 
 const PROTO = {
@@ -123,7 +126,8 @@ function subSummary(sub) {
 function renderServers() {
   const list = $("#server-list");
   if (!state.servers.length) {
-    list.innerHTML = `<div class="empty"><b>Добавьте первый сервер</b>Скопируйте ссылку на сервер или подписку от провайдера и нажмите «Вставить».</div>`;
+    list.innerHTML = `<div class="empty"><b>Добавьте первый сервер</b>Скопируйте ссылку на сервер или подписку от провайдера и нажмите «Вставить».
+      <p class="empty-bot">Нет сервера? <button class="text-link" id="bot-link">Бесплатный VPN в @v4hood_bot</button></p></div>`;
     return;
   }
   const q = $("#search").value.trim().toLowerCase();
@@ -426,6 +430,10 @@ function bind() {
   });
 
   $("#paste-btn").addEventListener("click", () => call("ImportClipboard").then(added).catch(() => {}));
+  $("#qr-btn").addEventListener("click", () => call("ScanQR").then((n) => n && added(n)).catch(() => {}));
+  $("#welcome-dialog").addEventListener("close", () => {
+    if ($("#welcome-dialog").returnValue === "bot") api().OpenURL(BOT_URL);
+  });
   $("#add-btn").addEventListener("click", () => {
     $("#add-text").value = "";
     $("#add-dialog").showModal();
@@ -455,6 +463,7 @@ function bind() {
 
   const list = $("#server-list");
   list.addEventListener("click", (e) => {
+    if (e.target.closest("#bot-link")) return api().OpenURL(BOT_URL);
     const row = e.target.closest(".row");
     if (!row) return;
     const id = row.dataset.id;
@@ -587,6 +596,14 @@ async function init() {
   applyPlatform();
   render();
   renderUpdate();
+  welcome();
+}
+
+// First run: offer a free VPN from the Telegram bot, once.
+async function welcome() {
+  if (!(await api().WelcomePending())) return;
+  $("#welcome-dialog").showModal();
+  api().WelcomeSeen();
 }
 
 // Wails injects its runtime asynchronously; wait until bindings are ready.

@@ -92,8 +92,15 @@ jobs:
           # Apple Silicon.
           codesign --force --deep --sign - build/bin/Vlessia.app
           mkdir -p dist
-          hdiutil create -volname Vlessia -srcfolder build/bin/Vlessia.app -ov -format UDZO \
-            "dist/Vlessia-${{ env.VERSION }}-macos-universal.dmg"
+          # hdiutil sometimes misjudges the image size on CI runners ("No
+          # space left on device"): give it one explicitly, and retry.
+          size=$(( $(du -sm build/bin/Vlessia.app | cut -f1) + 50 ))
+          for attempt in 1 2 3; do
+            hdiutil create -volname Vlessia -srcfolder build/bin/Vlessia.app -ov -format UDZO -size "${size}m" \
+              "dist/Vlessia-${{ env.VERSION }}-macos-universal.dmg" && break
+            [ "$attempt" = 3 ] && exit 1
+            sleep 10
+          done
 
       - uses: actions/upload-artifact@v4
         with:

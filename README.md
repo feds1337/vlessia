@@ -1,128 +1,148 @@
+<div align="center">
+
+<img src="build/appicon.png" width="112" alt="Vlessia">
+
 # Vlessia
 
-Десктопный VPN-клиент для Windows на базе [Xray-core](https://github.com/XTLS/Xray-core).
-Xray встроен как Go-библиотека, поэтому всё собирается в один `Vlessia.exe`.
+**Быстрый и красивый VPN-клиент для Windows на базе Xray-core**
 
-## Установка
+VLESS · Hysteria 2 · AmneziaWG · WireGuard · OpenVPN · Outline — в одном окне и одном `.exe`
 
-Скачайте `Vlessia-<версия>-setup.exe` со страницы [Releases](https://github.com/feds1337/vlessia/releases) и запустите. Установщик ставит клиент в `Program Files\Vlessia`, создаёт ярлыки и запись в «Приложениях» (удаление оттуда же; серверы и настройки в `%APPDATA%\Vlessia` при удалении сохраняются). Без установки можно запускать `Vlessia-<версия>-portable.exe`.
+[![Release](https://img.shields.io/github/v/release/feds1337/vlessia?style=for-the-badge&color=22c55e&label=версия)](https://github.com/feds1337/vlessia/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/feds1337/vlessia/total?style=for-the-badge&color=0ea5e9&label=загрузки)](https://github.com/feds1337/vlessia/releases)
+[![Windows](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4?style=for-the-badge&logo=windows11&logoColor=white)](#-установка)
+[![License](https://img.shields.io/github/license/feds1337/vlessia?style=for-the-badge&color=a855f7&label=лицензия)](LICENSE)
 
-## Возможности
+### [⬇️ Скачать последнюю версию](https://github.com/feds1337/vlessia/releases/latest)
 
-- Протоколы: **VLESS** (включая REALITY и XTLS Vision), VMess, Trojan, Shadowsocks / **Outline**, **Hysteria 2**, **WireGuard**, **AmneziaWG** (1.0 – 3.1), **OpenVPN**, SOCKS5 и HTTP(S)-прокси
-- Транспорты: TCP (RAW), WebSocket, gRPC, XHTTP, HTTPUpgrade
-- Hysteria 2: ссылки `hysteria2://` / `hy2://`, обфускация salamander, port hopping (`443,20000-30000`, `mport`), скорость (`upmbps` / `downmbps`). Для `insecure=1` сертификат сервера закрепляется (pin) при каждом подключении — Xray больше не поддерживает отключение проверки
-- AmneziaWG / WireGuard: файлы `.conf` (кнопка «Открыть файл…» или вставка текста) и ссылки `vpn://` из приложения AmneziaVPN. Поддерживаются параметры AWG 3.x (`HeaderProtectionKey`, `RandomTrailers`, `DisableCookies`, таймеры и диапазоны). Такие серверы всегда работают в режиме полного туннеля (TUN)
-- Импорт ссылок из буфера обмена и подписок (base64 или список ссылок)
-- OpenVPN: файлы `.ovpn` со встроенными или внешними сертификатами, tls-auth / tls-crypt / tls-crypt-v2, UDP и TCP, логин и пароль (`auth-user-pass` — клиент спросит при подключении). Работает в режиме полного туннеля
-- WireGuard: `.conf` и ссылки `wireguard://` / `wg://` (формат v2rayN, sing-box, Hiddify; параметры AmneziaWG в ссылке тоже понимаются)
-- Outline: ключи `ss://` и динамические ключи `ssconf://` (перезагружаются при каждом подключении)
-- Прокси: `socks://` (в том числе формат v2rayN), `socks5://`, `http://`, `https://` с логином и паролем. Адрес вида `http://хост:порт` без пути считается прокси, с путём — подпиской
-- Информация о подписке: остаток трафика, срок действия, название, анонс провайдера, ссылки на сайт и поддержку. Читаются заголовки `subscription-userinfo`, `profile-title`, `announce`, `support-url`, `profile-web-page-url`, `profile-update-interval`, `Content-Disposition`, а также строки `#ключ: значение` в теле подписки
-- Автообновление подписок с интервалом, который задаёт провайдер (по умолчанию — раз в 12 часов)
-- Два режима работы:
-  - **Системный прокси** — HTTP-прокси на `127.0.0.1:10809` прописывается в Windows; права администратора не нужны
-  - **TUN** — виртуальный адаптер wintun, через который идёт весь трафик системы; нужны права администратора (клиент предложит перезапуститься)
-- Локальные SOCKS5 `127.0.0.1:10808` и HTTP `127.0.0.1:10809` работают в обоих режимах
-- Опция «российские домены напрямую»
-- TCP-пинг серверов, проверка реального соединения, скорость в реальном времени
-- Значок в трее: подключение и смена режима; закрытие окна сворачивает в трей
-- Флаги стран в названиях серверов (в Windows нет флагов-эмодзи, поэтому встроен шрифт Twemoji Country Flags)
-- Звук при подключении — синтезируется в коде (`internal/sound`), отключается в настройках
-- Автозапуск вместе с Windows (сразу в трей) и автоподключение к выбранному серверу при запуске. Если клиент запущен от администратора, автозапуск оформляется заданием Планировщика с наивысшими правами — так TUN работает без запроса UAC; иначе используется обычная автозагрузка (только режим системного прокси)
+<img src="docs/screenshots/servers.png" width="820" alt="Главное окно Vlessia">
 
-## Сборка
+</div>
 
-Нужны Go 1.27+ и Wails CLI v2:
+---
+
+## ✨ Почему Vlessia
+
+<table>
+<tr>
+<td width="50%" valign="top">
+
+### 🚀 Один клик — и вы в сети
+Скопировали ссылку или подписку → «Вставить из буфера» → большая кнопка. Всё.
+
+### 🛡️ Два режима
+**Системный прокси** — без прав администратора, для браузеров и большинства программ.
+**TUN** — весь трафик системы, включая игры и консольные утилиты.
+
+### 📦 Подписки как надо
+Остаток гигабайт, срок действия, анонсы провайдера, ссылки на поддержку, автообновление.
+
+</td>
+<td width="50%" valign="top">
+
+### 🧩 Почти любые протоколы
+От VLESS REALITY до AmneziaWG 3.1 и OpenVPN — без установки сторонних программ.
+
+### 🏁 Запуск вместе с Windows
+Автозапуск сразу в трей и автоподключение — даже для TUN, без окна UAC.
+
+### 🎨 Приятные мелочи
+Флаги стран, пинг серверов, скорость в реальном времени, тёмная тема, значок в трее. И звук при подключении 💨 (выключается в настройках).
+
+</td>
+</tr>
+</table>
+
+<div align="center">
+<img src="docs/screenshots/subscriptions.png" width="49%" alt="Подписки">
+<img src="docs/screenshots/settings.png" width="49%" alt="Настройки">
+</div>
+
+## 🔌 Протоколы
+
+| Протокол | Как добавить | Что поддерживается |
+|---|---|---|
+| **VLESS** | `vless://`, подписка | REALITY, XTLS Vision, TCP · WS · gRPC · XHTTP · HTTPUpgrade, VLESS-encryption |
+| **VMess · Trojan** | `vmess://`, `trojan://` | TLS, все транспорты Xray |
+| **Shadowsocks · Outline** | `ss://`, `ssconf://` | SIP002 и старый формат, динамические ключи Outline |
+| **Hysteria 2** | `hysteria2://`, `hy2://` | salamander, port hopping, Brutal, самоподписанные сертификаты |
+| **AmneziaWG** | `.conf`, `vpn://` из AmneziaVPN | версии 1.0 – 3.1, включая `HeaderProtectionKey` и `RandomTrailers` |
+| **WireGuard** | `.conf`, `wireguard://` | ссылки форматов v2rayN, sing-box, Hiddify |
+| **OpenVPN** | `.ovpn` | tls-auth / tls-crypt / tls-crypt-v2, UDP и TCP, логин и пароль |
+| **SOCKS5 · HTTP(S)** | `socks://`, `http://хост:порт` | с логином и паролем |
+
+## 📥 Установка
+
+1. Скачайте **`Vlessia-…-setup.exe`** со страницы [Releases](https://github.com/feds1337/vlessia/releases/latest) и запустите.
+2. Скопируйте ссылку на сервер или подписку от провайдера и нажмите **«Вставить из буфера»**.
+3. Нажмите большую кнопку подключения. 🎉
+
+> [!TIP]
+> Не хотите устанавливать? Берите **`Vlessia-…-portable.exe`** — он работает без установки.
+
+> [!NOTE]
+> Установщик пока не подписан цифровой подписью, поэтому Windows SmartScreen может предупредить о «неизвестном издателе». Нажмите **«Подробнее» → «Выполнить в любом случае»**.
+
+## ❓ Вопросы и ответы
+
+<details>
+<summary><b>Прокси или TUN — что выбрать?</b></summary>
+
+**Системный прокси** подходит для браузеров, мессенджеров и большинства программ и не требует прав администратора. **TUN** создаёт виртуальный сетевой адаптер и заворачивает в VPN вообще весь трафик — игры, торренты, консольные утилиты. WireGuard, AmneziaWG и OpenVPN всегда работают в режиме TUN.
+</details>
+
+<details>
+<summary><b>Почему клиент просит права администратора?</b></summary>
+
+Только для режима TUN: создавать сетевые адаптеры и менять маршруты Windows разрешает лишь администратору. Клиент сам предложит перезапуститься с нужными правами. Режиму прокси права не нужны.
+</details>
+
+<details>
+<summary><b>Как сделать, чтобы VPN включался сам при входе в Windows?</b></summary>
+
+Запустите Vlessia от имени администратора, откройте **Настройки → Запуск** и включите «Запускать вместе с Windows» и «Подключаться при запуске». Клиент будет стартовать сразу в трей с правами администратора и без окна UAC, так что заработает и TUN.
+</details>
+
+<details>
+<summary><b>Подписка не показывает остаток трафика</b></summary>
+
+Клиент берёт эти данные из ответа сервера подписки (`subscription-userinfo` и другие заголовки, а также служебные строки в теле подписки). Если провайдер их не присылает, показать нечего — карточка подписки так и напишет.
+</details>
+
+<details>
+<summary><b>Где хранятся мои серверы и как всё удалить?</b></summary>
+
+Настройки, серверы и логи лежат в `%APPDATA%\Vlessia` (кнопка «Открыть папку данных» в настройках). Удаляется клиент через «Параметры → Приложения»: установщик уберёт автозапуск и вернёт системный прокси, а ваши серверы оставит на случай переустановки.
+</details>
+
+<details>
+<summary><b>Известные ограничения</b></summary>
+
+- Только Windows 10 / 11 (x64).
+- Параметр `allowInsecure` в Xray удалён (с 01.06.2026); вместо него поддерживаются `pcs` (pinnedPeerCertSha256) и `vcn` (verifyPeerCertByName). Для Hysteria 2 с `insecure=1` сертификат закрепляется автоматически.
+- Плагины Shadowsocks (`?plugin=`) не поддерживаются; маскировка Outline `prefix` тоже (подключение работает без неё).
+- AmneziaWG: параметры J1–J3 и Itime из промежуточной версии 1.5 пропускаются. Из ссылок `vpn://` импортируются только контейнеры AWG / WireGuard.
+- OpenVPN: не поддерживаются сжатие (`comp-lzo`, `compress`), шифры CBC, `dev tap`, статические ключи и профили без tls-auth / tls-crypt — клиент сообщит об этом при импорте.
+- WireGuard, AmneziaWG и OpenVPN по UDP не отвечают на пинг — проверяйте их подключением.
+</details>
+
+## 🛠️ Для разработчиков
+
+Vlessia написан на Go: [Xray-core](https://github.com/XTLS/Xray-core) встроен как библиотека, интерфейс на [Wails](https://wails.io) (WebView2). Сборка, тесты, выпуск релизов и устройство клиента — в **[docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)**.
 
 ```bash
-go install github.com/wailsapp/wails/v2/cmd/wails@v2.16.0
+wails build -clean -trimpath -ldflags "-s -w" -nsis
 ```
 
-```bash
-wails build -clean -trimpath -ldflags "-s -w"
-```
+## 💚 Благодарности
 
-Результат — `build/bin/Vlessia.exe`. Иконка приложения генерируется из кода командой `go run ./tools/genicon`.
+- [Xray-core](https://github.com/XTLS/Xray-core) — сердце клиента (MPL-2.0)
+- [amneziawg-go](https://github.com/amnezia-vpn/amneziawg-go) — AmneziaWG и WireGuard (MIT)
+- [go-openvpn](https://github.com/n0madic/go-openvpn) — OpenVPN (AGPL-3.0)
+- [Wails](https://wails.io) — десктопная оболочка (MIT)
+- [Wintun](https://www.wintun.net/) — драйвер TUN, © WireGuard LLC, распространяется по [лицензии Prebuilt Binaries](internal/tun/wintun-LICENSE.txt) и используется только через штатный API
+- [Twemoji Country Flags](https://github.com/talkjs/country-flag-emoji-polyfill) — флаги (MIT; изображения [Twemoji](https://github.com/twitter/twemoji), © Twitter, Inc. и др., [CC-BY 4.0](https://creativecommons.org/licenses/by/4.0/), полный текст в `frontend/dist/fonts/`)
 
-Установщик (нужен [NSIS](https://nsis.sourceforge.io/), `makensis` в PATH) — `build/bin/Vlessia-amd64-installer.exe`:
+## 📄 Лицензия
 
-```bash
-wails build -clean -trimpath -ldflags "-s -w -X main.version=v0.1.0" -nsis
-```
-
-Скрипт установщика — `build/windows/installer/project.nsi` (шаблон Wails, доработан: русский язык, закрытие запущенного клиента, удаление автозапуска и возврат системного прокси при деинсталляции через `Vlessia.exe --cleanup`).
-
-### Релизы
-
-Релиз собирается GitHub Actions (`.github/workflows/release.yml`) при публикации тега: тесты, сборка установщика и portable-версии, публикация на странице Releases. Тег с дефисом (`v0.2.0-beta`) публикуется как пре-релиз.
-
-```bash
-git tag v0.2.0
-```
-
-```bash
-git push origin v0.2.0
-```
-
-Тесты. `E2E=1` включает сквозные тесты через локальные серверы VLESS, Hysteria 2 и прокси (нужен интернет). `OPENVPN_EXE=путь\к\openvpn.exe` включает тест против официального OpenVPN-сервера (он запускается в режиме `dev null` — без драйверов и изменений в системе; `openvpn.exe` можно взять из MSI командой `msiexec /a OpenVPN-*.msi /qn TARGETDIR=папка`):
-
-```bash
-go test ./internal/...
-```
-
-## Устройство
-
-| Путь | Назначение |
-|---|---|
-| `main.go`, `app.go` | Запуск Wails, логика подключения, методы для UI |
-| `tray.go` | Иконка и меню в трее |
-| `internal/profile` | Модель сервера, парсинг ссылок и подписок |
-| `internal/subscription` | Метаданные подписки (трафик, срок, анонс) |
-| `internal/awg` | AmneziaWG/WireGuard на userspace-стеке (amneziawg-go + netstack) |
-| `internal/openvpn` | OpenVPN-клиент ([go-openvpn](https://github.com/n0madic/go-openvpn)) на userspace-стеке |
-| `internal/socks` | Локальный SOCKS5 (TCP + UDP), через который Xray ходит в туннели AWG и OpenVPN |
-| `internal/hysteria` | QUIC-проба Hysteria 2: пинг и сертификат для pin |
-| `internal/xray` | Генерация JSON-конфига Xray и запуск ядра в процессе |
-| `internal/sysproxy` | Системный прокси Windows (реестр + WinINet) |
-| `internal/tun` | wintun.dll (встроен в exe), настройка адаптера и маршрутов, повышение прав |
-| `internal/store` | Настройки и серверы в `%APPDATA%\Vlessia\config.json` |
-| `frontend/dist` | Интерфейс (HTML/CSS/JS, без сборки) |
-
-### Как работает TUN
-
-1. Определяется физический адаптер с маршрутом в интернет, адрес сервера заранее резолвится в IP.
-2. Xray создаёт адаптер `Vlessia`; исходящие соединения Xray привязаны к физическому адаптеру (`sockopt.interface`), поэтому собственный трафик Xray не попадает обратно в туннель.
-3. Через `netsh` адаптеру назначаются адрес, DNS и маршруты `0.0.0.0/1` + `128.0.0.0/1` (и IPv6 `::/1` + `8000::/1`). Все изменения временные и исчезают вместе с адаптером.
-4. DNS-запросы, пришедшие в TUN, перехватываются и разрешаются DNS-модулем Xray через прокси.
-
-Данные хранятся в `%APPDATA%\Vlessia` (путь можно переопределить переменной окружения `VLESSIA_DATA`). Там же лежат `app.log`, `xray.log` и последний сгенерированный `xray-config.json` — для отладки.
-
-### Как работает AmneziaWG
-
-Xray не умеет AmneziaWG, поэтому туннель поднимает [amneziawg-go v3](https://github.com/amnezia-vpn/amneziawg-go) в userspace-стеке. Наружу он отдаёт локальный SOCKS5, а Xray подключается к нему как к обычному outbound и сам обеспечивает TUN, маршрутизацию, DNS и статистику. UDP-сокет WireGuard привязан к физическому адаптеру, чтобы не уходить в собственный туннель.
-
-Важно: AmneziaWG 3.x есть только в модуле `github.com/amnezia-vpn/amneziawg-go/v3`. Старый модуль без `/v3` (включая его master) не понимает `HeaderProtectionKey`/`RandomTrailers`, и сервер AWG 3 молча игнорирует такой клиент. Параметры из `.conf` переводятся в UAPI в `internal/awg` (`uapiKeys`), неизвестные пропускаются с записью в лог. Сохранённые AWG-серверы перечитываются из исходной ссылки при каждом запуске, поэтому новые параметры применяются без повторного импорта.
-
-### Обход бага кэша Hysteria в Xray
-
-Транспорт Hysteria в xray-core хранит клиентов в глобальном кэше по адресу сервера и никогда их не удаляет. Новый экземпляр Xray подхватил бы старые настройки TLS, авторизации и привязки к адаптеру. `internal/xray/hysteria_reset.go` очищает этот кэш через `go:linkname` при каждой остановке Xray. Если обновление xray-core изменит внутреннюю структуру, упадёт тест `TestHysteriaResetLayout`.
-
-## Ограничения
-
-- Только Windows.
-- Параметр `allowInsecure` в Xray удалён (с 01.06.2026); вместо него поддерживаются параметры ссылки `pcs` (pinnedPeerCertSha256) и `vcn` (verifyPeerCertByName).
-- Плагины Shadowsocks (`?plugin=`) не поддерживаются.
-- AmneziaWG: параметры J1–J3 и Itime (промежуточная версия AWG 1.5) пропускаются — в amneziawg-go v3 их нет. Из ссылок `vpn://` импортируются только контейнеры AWG/WireGuard.
-- WireGuard/AmneziaWG и OpenVPN по UDP не отвечают на пинг (протоколы молчат на неаутентифицированные пакеты) — их проверяют подключением.
-- OpenVPN: не поддерживаются сжатие (`comp-lzo`, `compress`), старые шифры CBC (нужен AES-GCM или CHACHA20-POLY1305 — все серверы OpenVPN 2.5+ их согласуют), режим `dev tap`, статические ключи и профили без tls-auth / tls-crypt. Клиент сообщит об этом при импорте.
-- Outline: маскировка `prefix` не поддерживается Xray — подключение работает, но без неё.
-
-## Сторонние ресурсы
-
-- `internal/tun/wintun.dll` — [Wintun](https://www.wintun.net/) 0.14.1 (amd64), © WireGuard LLC, распространяется вместе с клиентом по [лицензии Prebuilt Binaries](internal/tun/wintun-LICENSE.txt); клиент использует его только через штатный API.
-- Шрифт флагов `frontend/dist/fonts/TwemojiCountryFlags.woff2` из пакета [country-flag-emoji-polyfill](https://github.com/talkjs/country-flag-emoji-polyfill) (TalkJS, MIT). Изображения флагов — [Twemoji](https://github.com/twitter/twemoji), © Twitter, Inc. и др., лицензия [CC-BY 4.0](https://creativecommons.org/licenses/by/4.0/). Полный текст: `frontend/dist/fonts/TwemojiCountryFlags-LICENSE.md`.
-
-## Лицензия
-
-Проект распространяется под лицензией [AGPL-3.0](LICENSE). В проект встроен [go-openvpn](https://github.com/n0madic/go-openvpn) под лицензией **AGPL-3.0**, поэтому собранный клиент тоже подпадает под AGPL-3.0: для личного использования ограничений нет, но при распространении клиента (или предоставлении его как сервиса) нужно открыть исходный код всего проекта. Остальные зависимости: Xray-core — MPL-2.0, amneziawg-go — MIT, Wails — MIT.
+[AGPL-3.0](LICENSE). Для личного использования ограничений нет. Если распространяете изменённый клиент или предоставляете его как сервис, нужно открыть исходный код — этого требует встроенный go-openvpn.

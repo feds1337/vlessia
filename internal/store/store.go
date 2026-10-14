@@ -49,6 +49,29 @@ type Settings struct {
 	NoUpdateCheck bool `json:"noUpdateCheck"`
 	// AutoConnect connects to the selected server when the client starts.
 	AutoConnect bool `json:"autoConnect"`
+
+	// NoAnimations turns interface animations off (stored inverted so that
+	// they are on by default).
+	NoAnimations bool `json:"noAnimations"`
+	// NoAutoReconnect disables the connection watchdog, which reconnects
+	// (and then switches servers) when the VPN stops passing traffic.
+	NoAutoReconnect bool `json:"noAutoReconnect"`
+	// AutoBest picks the fastest server of the selected server's
+	// subscription before connecting.
+	AutoBest bool `json:"autoBest"`
+	// DirectRules and ProxyRules are the user's own routing rules, one per
+	// entry: a domain ("example.com" covers its subdomains), an Xray domain
+	// rule ("full:", "keyword:", "regexp:", "domain:"), an IP or a CIDR.
+	// ProxyRules win over DirectRules and over BypassRU.
+	DirectRules []string `json:"directRules"`
+	ProxyRules  []string `json:"proxyRules"`
+}
+
+// Traffic counts the bytes passed through the VPN on one day.
+type Traffic struct {
+	Day  string `json:"day"` // local date, YYYY-MM-DD
+	Up   int64  `json:"up"`
+	Down int64  `json:"down"`
 }
 
 type Data struct {
@@ -60,6 +83,9 @@ type Data struct {
 	// SavedProxy holds the user's proxy settings while ours are active, so
 	// they can be restored even after a crash.
 	SavedProxy *sysproxy.State `json:"savedProxy,omitempty"`
+
+	// Today is the traffic of the current day.
+	Today Traffic `json:"today"`
 
 	// WelcomeSeen: the first-run offer (a free VPN from the Telegram bot)
 	// has been shown.

@@ -64,12 +64,14 @@ func EffectiveMode(srv *profile.Server, mode string) string {
 func StartEngine(lib *Library, srv *profile.Server, settings store.Settings, dir string, hooks Hooks) (*Engine, error) {
 	logger := lib.Log
 	opts := xray.Options{
-		SocksPort: settings.SocksPort,
-		HTTPPort:  settings.HTTPPort,
-		BypassRU:  settings.BypassRU,
-		DNS:       settings.DNS,
-		LogFile:   filepath.Join(dir, "xray.log"),
-		LogLevel:  settings.LogLevel,
+		SocksPort:   settings.SocksPort,
+		HTTPPort:    settings.HTTPPort,
+		BypassRU:    settings.BypassRU,
+		DirectRules: settings.DirectRules,
+		ProxyRules:  settings.ProxyRules,
+		DNS:         settings.DNS,
+		LogFile:     filepath.Join(dir, "xray.log"),
+		LogLevel:    settings.LogLevel,
 	}
 
 	// Ask for the OpenVPN login before touching the network.

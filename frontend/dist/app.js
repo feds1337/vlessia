@@ -17,7 +17,10 @@ function toast(msg, isError = false) {
   el.className = "toast" + (isError ? " error" : "");
   el.textContent = msg;
   $("#toasts").appendChild(el);
-  setTimeout(() => el.remove(), isError ? 7000 : 3000);
+  setTimeout(() => {
+    el.classList.add("leaving");
+    setTimeout(() => el.remove(), 200);
+  }, isError ? 7000 : 3000);
 }
 
 async function call(fn, ...args) {
@@ -169,10 +172,18 @@ function selectedServer() {
   return state.servers.find((s) => s.id === (st.state === "disconnected" ? state.selected : st.serverId));
 }
 
+let lastDockState = null;
+
 function renderDock() {
   const st = state.status;
   const srv = selectedServer();
-  $("#dock").dataset.state = st.state;
+  const dock = $("#dock");
+  if (lastDockState !== null && lastDockState !== st.state) {
+    restart($("#status-word"), "changed");
+    if (st.state === "connected") ripple();
+  }
+  lastDockState = st.state;
+  dock.dataset.state = st.state;
 
   $("#status-word").textContent = {
     connected: "Подключено", connecting: "Подключение…", disconnecting: "Отключение…", disconnected: "Отключено",
@@ -211,6 +222,103 @@ function renderDock() {
   const foot = [upd?.current && upd.current !== "dev" ? "Версия " + bareVersion(upd.current) : "Версия для разработки"];
   if (st.admin && platform === "windows") foot.push("права администратора");
   $("#dock-foot").textContent = foot.join(", ");
+  renderTotals();
+}
+
+// restart replays a CSS animation bound to cls.
+function restart(el, cls) {
+  el.classList.remove(cls);
+  void el.offsetWidth;
+  el.classList.add(cls);
+}
+
+// ripple: the connected colour spreads from the button.
+function ripple() {
+  const dock = $("#dock");
+  const b = $("#power").getBoundingClientRect();
+  const d = dock.getBoundingClientRect();
+  dock.style.setProperty("--rx", `${b.left - d.left + b.width / 2}px`);
+  dock.style.setProperty("--ry", `${b.top - d.top + dock.scrollTop + b.height / 2}px`);
+  restart(dock, "just-connected");
+  setTimeout(() => dock.classList.remove("just-connected"), 900);
+}
+
+// ---------- speed graph ----------
+
+let traffic = null;
+const HISTORY = 90; // samples kept by the client, one per second
+
+function renderTraffic(t) {
+  traffic = t;
+  $("#up").textContent = fmtSpeed(t.up);
+  $("#down").textContent = fmtSpeed(t.down);
+  drawGraph();
+  renderTotals();
+}
+
+// graphScale: the top of the plot, with headroom, never below 64 KB/s so
+// an idle connection draws a calm line instead of noise.
+function graphScale(hist) {
+  let max = 64 * 1024;
+  for (const p of hist) max = Math.max(max, p.up, p.down);
+  return max * 1.15;
+}
+
+function graphPoints(hist, key, max) {
+  const offset = HISTORY - hist.length;
+  return hist.map((p, i) => [offset + i, 40 - (p[key] / max) * 38]);
+}
+
+function drawGraph() {
+  const hist = traffic?.history || [];
+  const has = hist.length > 1;
+  $("#graph").classList.toggle("empty", !has);
+  if (!has) {
+    for (const id of ["#graph-area", "#graph-down", "#graph-up"]) $(id).removeAttribute("d");
+    return;
+  }
+  const max = graphScale(hist);
+  const line = (pts) => pts.map(([x, y], i) => `${i ? "L" : "M"}${x} ${y.toFixed(2)}`).join("");
+  const down = graphPoints(hist, "down", max);
+  $("#graph-down").setAttribute("d", line(down));
+  $("#graph-area").setAttribute("d", `${line(down)}L${down[down.length - 1][0]} 40L${down[0][0]} 40Z`);
+  $("#graph-up").setAttribute("d", line(graphPoints(hist, "up", max)));
+}
+
+// The crosshair shows one second of the history.
+function graphHover(e) {
+  const hist = traffic?.history || [];
+  const box = $("#graph").getBoundingClientRect();
+  const x = Math.round(((e.clientX - box.left) / box.width) * (HISTORY - 1));
+  const i = x - (HISTORY - hist.length);
+  const tip = $("#graph-tip");
+  const cross = $("#graph-cross");
+  if (i < 0 || i >= hist.length) {
+    tip.hidden = true;
+    cross.setAttribute("hidden", "");
+    return;
+  }
+  const ago = hist.length - 1 - i;
+  cross.setAttribute("x1", x);
+  cross.setAttribute("x2", x);
+  cross.removeAttribute("hidden"); // SVG elements have no .hidden
+  tip.innerHTML = `<b>${ago ? ago + " с назад" : "Сейчас"}</b>Получение ${fmtSpeed(hist[i].down)}<br>Отправка ${fmtSpeed(hist[i].up)}`;
+  tip.hidden = false;
+  const left = Math.min(Math.max(e.clientX - box.left, 0), box.width);
+  tip.style.left = `${left}px`;
+  tip.classList.toggle("flip", left > box.width / 2);
+}
+
+function renderTotals() {
+  const el = $("#totals");
+  if (!traffic || !state) return;
+  const session = traffic.sessionUp + traffic.sessionDown;
+  const today = traffic.todayUp + traffic.todayDown;
+  if (state.status.state === "connected") {
+    el.textContent = `За сессию ${fmtBytes(session)}, сегодня ${fmtBytes(today)}`;
+  } else {
+    el.textContent = today ? `Сегодня через VPN ${fmtBytes(today)}` : "";
+  }
 }
 
 // ---------- subscriptions ----------
@@ -285,6 +393,11 @@ function fillSettings() {
   f.bypassRu.checked = s.bypassRu;
   f.sound.checked = s.sound;
   f.autoConnect.checked = s.autoConnect;
+  f.autoReconnect.checked = !s.noAutoReconnect;
+  f.autoBest.checked = s.autoBest;
+  f.proxyRules.value = (s.proxyRules || []).join("\n");
+  f.directRules.value = (s.directRules || []).join("\n");
+  f.animations.checked = !s.noAnimations;
   f.updateCheck.checked = !s.noUpdateCheck;
   f.logLevel.value = s.logLevel;
   api().GetAutostart().then(renderAutostart);
@@ -301,6 +414,11 @@ function readSettings() {
     bypassRu: f.bypassRu.checked,
     sound: f.sound.checked,
     autoConnect: f.autoConnect.checked,
+    noAutoReconnect: !f.autoReconnect.checked,
+    autoBest: f.autoBest.checked,
+    proxyRules: f.proxyRules.value.split("\n"),
+    directRules: f.directRules.value.split("\n"),
+    noAnimations: !f.animations.checked,
     noUpdateCheck: !f.updateCheck.checked,
     logLevel: f.logLevel.value,
   };
@@ -379,8 +497,24 @@ async function refreshLogs() {
   if (atBottom) pre.scrollTop = pre.scrollHeight;
 }
 
+// The underline slides to the active tab.
+function moveTabMark() {
+  const tab = $(".tab.active");
+  const tabs = $(".tabs");
+  if (!tab) return;
+  tabs.style.setProperty("--tab-x", `${tab.offsetLeft}px`);
+  tabs.style.setProperty("--tab-w", `${tab.offsetWidth}px`);
+}
+
+// Animations follow the setting and the system's "reduce motion".
+function applyMotion(off) {
+  const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  document.documentElement.classList.toggle("no-anim", off || reduce);
+}
+
 function showView(name) {
   $$(".tab").forEach((b) => b.classList.toggle("active", b.dataset.view === name));
+  moveTabMark();
   $$(".view").forEach((v) => v.classList.toggle("active", v.id === "view-" + name));
   clearInterval(logsTimer);
   if (name === "settings") fillSettings();
@@ -542,7 +676,10 @@ function bind() {
   $("#settings-form").addEventListener("submit", (e) => e.preventDefault());
   $("#settings-form").addEventListener("change", (e) => {
     if (e.target.id === "autostart") return;
-    call("SaveSettings", readSettings()).then(() => toast("Сохранено")).catch(() => fillSettings());
+    if (e.target.name === "animations") applyMotion(!e.target.checked);
+    // A bad rule keeps the text so it can be corrected.
+    const keep = e.target.tagName === "TEXTAREA";
+    call("SaveSettings", readSettings()).then(() => toast("Сохранено")).catch(() => keep || fillSettings());
   });
   $("#autostart").addEventListener("change", (e) =>
     call("SetAutostart", e.target.checked).then(renderAutostart).catch(() => api().GetAutostart().then(renderAutostart)));
@@ -567,14 +704,21 @@ function bind() {
     if (s.status.error === "need_admin" && prevError !== "need_admin" && !$("#admin-dialog").open) $("#admin-dialog").showModal();
     if (s.status.error === "need_ovpn_auth" && prevError !== "need_ovpn_auth" && !$("#auth-dialog").open) askCredentials(s.status.serverId, true);
   });
-  window.runtime.EventsOn("traffic", (t) => {
-    $("#up").textContent = fmtSpeed(t.up);
-    $("#down").textContent = fmtSpeed(t.down);
+  window.runtime.EventsOn("traffic", renderTraffic);
+  window.runtime.EventsOn("notice", (text) => toast(text));
+  $("#graph").addEventListener("mousemove", graphHover);
+  $("#graph").addEventListener("mouseleave", () => {
+    $("#graph-tip").hidden = true;
+    $("#graph-cross").setAttribute("hidden", "");
   });
+  window.addEventListener("resize", moveTabMark);
   window.runtime.EventsOn("ping", (p) => {
     pings[p.id] = p.ms;
     const cell = document.querySelector(`#server-list .row[data-id="${p.id}"] .ping`);
-    if (cell) cell.outerHTML = pingCell(p.id);
+    if (cell) {
+      cell.outerHTML = pingCell(p.id);
+      document.querySelector(`#server-list .row[data-id="${p.id}"] .ping`)?.classList.add("fresh");
+    }
   });
   window.runtime.EventsOn("update", (u) => {
     upd = u;
@@ -592,8 +736,13 @@ function applyPlatform() {
 
 async function init() {
   bind();
-  [state, upd, platform] = await Promise.all([api().GetState(), api().GetUpdate(), api().GetPlatform()]);
+  let t;
+  [state, upd, platform, t] = await Promise.all([api().GetState(), api().GetUpdate(), api().GetPlatform(), api().GetTraffic()]);
+  applyMotion(state.settings.noAnimations);
   applyPlatform();
+  moveTabMark();
+  renderTraffic(t);
+  document.fonts.ready.then(moveTabMark);
   render();
   renderUpdate();
   welcome();

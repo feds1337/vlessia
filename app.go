@@ -92,6 +92,11 @@ type App struct {
 
 	upd updater
 
+	meter *core.Meter
+	// autoFails counts the watchdog's recoveries since the connection last
+	// worked; the second one in a row switches servers.
+	autoFails atomic.Int32
+
 	opMu sync.Mutex // serialises Connect/Disconnect
 
 	mu        sync.Mutex   // guards the fields below
@@ -108,6 +113,7 @@ func NewApp(st *store.Store, logger *log.Logger) *App {
 		status: Status{State: "disconnected", Admin: tun.IsAdmin()},
 	}
 	a.lib = &core.Library{Store: st, Log: logger, HTTP: a.httpClient, Changed: a.emitState}
+	a.meter = core.NewMeter(st)
 	return a
 }
 
@@ -205,6 +211,7 @@ func (a *App) beforeClose(ctx context.Context) bool {
 
 func (a *App) shutdown(ctx context.Context) {
 	_ = a.Disconnect()
+	a.meter.Flush()
 	a.tray.Stop()
 }
 
@@ -390,6 +397,12 @@ func (a *App) SaveSettings(s store.Settings) error {
 		}
 	}
 	s.DNS = dns
+	s.DirectRules, s.ProxyRules = cleanRules(s.DirectRules), cleanRules(s.ProxyRules)
+	for _, rules := range [][]string{s.DirectRules, s.ProxyRules} {
+		if _, _, err := xray.ParseRules(rules); err != nil {
+			return err
+		}
+	}
 	var old store.Settings
 	if err := a.store.Update(func(d *store.Data) { old, d.Settings = d.Settings, s }); err != nil {
 		return err
@@ -405,7 +418,9 @@ func (a *App) SaveSettings(s store.Settings) error {
 // reconnecting; sound, autostart or update options do not.
 func affectsConnection(a, b store.Settings) bool {
 	return a.Mode != b.Mode || a.SocksPort != b.SocksPort || a.HTTPPort != b.HTTPPort ||
-		a.BypassRU != b.BypassRU || a.LogLevel != b.LogLevel || strings.Join(a.DNS, ",") != strings.Join(b.DNS, ",")
+		a.BypassRU != b.BypassRU || a.LogLevel != b.LogLevel || strings.Join(a.DNS, ",") != strings.Join(b.DNS, ",") ||
+		strings.Join(a.DirectRules, "|") != strings.Join(b.DirectRules, "|") ||
+		strings.Join(a.ProxyRules, "|") != strings.Join(b.ProxyRules, "|")
 }
 
 // SetMode switches between system proxy and TUN.
@@ -464,11 +479,21 @@ func (a *App) Connect() error {
 	if srv == nil {
 		return errors.New("выберите сервер")
 	}
-	settings.Mode = core.EffectiveMode(srv, settings.Mode)
+	mode := settings.Mode
+	settings.Mode = core.EffectiveMode(srv, mode)
 
 	a.setStatus(func(s *Status) {
 		*s = Status{State: "connecting", Mode: settings.Mode, ServerID: srv.ID, Admin: tun.IsAdmin()}
 	})
+	if settings.AutoBest {
+		if best := a.fastestServer(srv); best != nil && best.ID != srv.ID {
+			a.log.Printf("самый быстрый сервер: %s", best.Name)
+			_ = a.lib.Select(best.ID)
+			srv = best
+			settings.Mode = core.EffectiveMode(srv, mode)
+			a.setStatus(func(s *Status) { s.ServerID, s.Mode = srv.ID, settings.Mode })
+		}
+	}
 
 	eng, sess, err := a.start(srv, settings)
 	if err != nil {
@@ -488,7 +513,11 @@ func (a *App) Connect() error {
 	if sess != nil && sess.Done() != nil {
 		go a.watchTUN(sess)
 	}
+	a.meter.StartSession()
 	go a.statsLoop(eng.Inst, stop)
+	if !settings.NoAutoReconnect {
+		go a.watch(eng, stop)
+	}
 	a.log.Printf("подключено: %s (%s), режим %s", srv.Name, srv.Address, settings.Mode)
 	if settings.Sound {
 		sound.PlayConnected()
@@ -615,13 +644,16 @@ func (a *App) statsLoop(inst *xray.Instance, stop chan struct{}) {
 	for {
 		select {
 		case <-stop:
-			runtime.EventsEmit(a.ctx, "traffic", map[string]int64{"up": 0, "down": 0})
+			a.meter.Flush()
+			info := a.meter.Info()
+			info.Up, info.Down = 0, 0
+			runtime.EventsEmit(a.ctx, "traffic", info)
 			return
 		case <-t.C:
 			// Always read: the counters accumulate until reset.
-			up, down := inst.Traffic()
+			a.meter.Add(inst.Traffic())
 			if a.visible.Load() {
-				runtime.EventsEmit(a.ctx, "traffic", map[string]int64{"up": up, "down": down})
+				runtime.EventsEmit(a.ctx, "traffic", a.meter.Info())
 			}
 		}
 	}
@@ -644,16 +676,7 @@ func (a *App) PingAll() {
 	var servers []*profile.Server
 	a.store.Read(func(d *store.Data) { servers = append(servers, d.Servers...) })
 
-	a.mu.Lock()
-	iface := a.status.Interface
-	a.mu.Unlock()
-	dialer := &net.Dialer{Timeout: 3 * time.Second}
-	if iface != "" {
-		// In TUN mode bypass the tunnel, otherwise every port "answers".
-		dialer.Control = tun.BindToInterface(iface)
-	}
-
-	core.PingAll(servers, dialer, func(id string, ms int64) {
+	core.PingAll(servers, a.directDialer(), func(id string, ms int64) {
 		runtime.EventsEmit(a.ctx, "ping", map[string]any{"id": id, "ms": ms})
 	})
 }
@@ -672,3 +695,100 @@ func (a *App) OpenDataDir() {
 // GetPlatform returns the operating system ("windows", "darwin", "linux"),
 // for platform-specific wording in the UI.
 func (a *App) GetPlatform() string { return goruntime.GOOS }
+
+// directDialer reaches the internet around the VPN: in TUN mode its sockets
+// are bound to the physical adapter, otherwise every port would "answer".
+func (a *App) directDialer() *net.Dialer {
+	a.mu.Lock()
+	iface := a.status.Interface
+	a.mu.Unlock()
+	dialer := &net.Dialer{Timeout: 3 * time.Second}
+	if iface != "" {
+		dialer.Control = tun.BindToInterface(iface)
+	}
+	return dialer
+}
+
+// GetTraffic returns the speed history and the traffic totals.
+func (a *App) GetTraffic() core.TrafficInfo { return a.meter.Info() }
+
+// cleanRules trims rule lines and drops empty ones.
+func cleanRules(lines []string) []string {
+	var out []string
+	for _, l := range lines {
+		if l = strings.TrimSpace(l); l != "" {
+			out = append(out, l)
+		}
+	}
+	return out
+}
+
+// ---------- fastest server, watchdog ----------
+
+// fastestServer pings srv's subscription (or the manually added servers),
+// except skip, and returns the quickest, or nil.
+func (a *App) fastestServer(srv *profile.Server, skip ...string) *profile.Server {
+	var all []*profile.Server
+	a.store.Read(func(d *store.Data) { all = append(all, d.Servers...) })
+	group := core.Group(all, srv, skip...)
+	if len(group) == 0 {
+		return nil
+	}
+	best := core.Fastest(group, a.directDialer())
+	if best == nil {
+		return nil
+	}
+	c := *best
+	return &c
+}
+
+// watch checks the connection until it stops; see recoverConnection.
+func (a *App) watch(eng *core.Engine, stop chan struct{}) {
+	core.Watchdog{
+		Check:   func() error { return core.CheckThrough(a.localProxyURL()) },
+		Online:  func() bool { return core.Online(a.directDialer()) },
+		Healthy: func() { a.autoFails.Store(0) },
+		Failed:  func() { go a.recoverConnection(eng) },
+		Logf:    a.log.Printf,
+	}.Run(stop)
+}
+
+// recoverConnection reconnects after the watchdog found eng dead. If the
+// fresh connection dies again without ever working, it switches to the
+// fastest other server of the same subscription.
+func (a *App) recoverConnection(dead *core.Engine) {
+	a.mu.Lock()
+	current, id := a.eng == dead, a.status.ServerID
+	a.mu.Unlock()
+	var off bool
+	a.store.Read(func(d *store.Data) { off = d.Settings.NoAutoReconnect })
+	if !current || off {
+		return
+	}
+	srv := a.store.Server(id)
+	if srv == nil {
+		return
+	}
+	var next *profile.Server
+	if a.autoFails.Add(1) >= 2 {
+		next = a.fastestServer(srv, srv.ID)
+	}
+	if next != nil {
+		a.notice(fmt.Sprintf("Сервер «%s» не отвечает — переключаюсь на «%s»", srv.Name, next.Name))
+		_ = a.lib.Select(next.ID)
+	} else {
+		a.notice("Соединение через VPN пропало — переподключаюсь")
+	}
+	_ = a.Disconnect()
+	if err := a.Connect(); err != nil {
+		a.log.Printf("автопереподключение не удалось: %v", err)
+	}
+}
+
+// notice shows a message in the window and logs it.
+func (a *App) notice(text string) {
+	a.log.Printf("%s", text)
+	if a.ctx != nil {
+		runtime.EventsEmit(a.ctx, "notice", text)
+	}
+}

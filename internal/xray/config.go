@@ -33,9 +33,13 @@ type Options struct {
 	// (WireGuard/AmneziaWG/OpenVPN), which then replaces the proxy outbound.
 	BridgePort int
 	BypassRU   bool
-	DNS        []string
-	LogFile    string
-	LogLevel   string
+	// DirectRules and ProxyRules are the user's rules (see ParseRules);
+	// ProxyRules win.
+	DirectRules []string
+	ProxyRules  []string
+	DNS         []string
+	LogFile     string
+	LogLevel    string
 }
 
 type obj = map[string]any
@@ -91,6 +95,25 @@ func BuildConfig(s *profile.Server, o Options) ([]byte, error) {
 		rules = append(rules, obj{"type": "field", "inboundTag": []string{TagTun}, "port": "53", "outboundTag": TagDNS})
 	}
 	rules = append(rules, obj{"type": "field", "ip": privateCIDRs, "outboundTag": TagDirect})
+	// The user's rules come before the .ru bypass: "through VPN" wins over
+	// "direct", and both over the bypass.
+	hasIPRules := false
+	for _, r := range []struct {
+		lines []string
+		tag   string
+	}{{o.ProxyRules, TagProxy}, {o.DirectRules, TagDirect}} {
+		domains, ips, err := ParseRules(r.lines)
+		if err != nil {
+			return nil, err
+		}
+		if len(domains) > 0 {
+			rules = append(rules, obj{"type": "field", "domain": domains, "outboundTag": r.tag})
+		}
+		if len(ips) > 0 {
+			rules = append(rules, obj{"type": "field", "ip": ips, "outboundTag": r.tag})
+			hasIPRules = true
+		}
+	}
 	if o.BypassRU {
 		rules = append(rules, obj{
 			"type": "field", "outboundTag": TagDirect,
@@ -103,12 +126,19 @@ func BuildConfig(s *profile.Server, o Options) ([]byte, error) {
 		dns = []string{"1.1.1.1", "8.8.8.8"}
 	}
 
+	// IP rules only match connections by IP unless Xray resolves domains
+	// that no domain rule matched; do so only when there are IP rules.
+	domainStrategy := "AsIs"
+	if hasIPRules {
+		domainStrategy = "IPIfNonMatch"
+	}
+
 	cfg := obj{
 		"log":       obj{"loglevel": nonEmpty(o.LogLevel, "warning"), "access": "none", "error": o.LogFile},
 		"dns":       obj{"servers": dns, "queryStrategy": "UseIPv4"},
 		"inbounds":  inbounds,
 		"outbounds": outbounds,
-		"routing":   obj{"domainStrategy": "AsIs", "rules": rules},
+		"routing":   obj{"domainStrategy": domainStrategy, "rules": rules},
 		"stats":     obj{},
 		"policy": obj{"system": obj{
 			"statsOutboundUplink":   true,

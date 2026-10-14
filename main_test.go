@@ -64,3 +64,27 @@ func TestAppLibrary(t *testing.T) {
 		t.Error("Connect without a selected server should fail")
 	}
 }
+
+func TestSaveRules(t *testing.T) {
+	t.Setenv("VLESSIA_DATA", t.TempDir())
+	st, err := store.Open()
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := NewApp(st, log.New(io.Discard, "", 0))
+	s := a.GetState().Settings
+	s.ProxyRules = []string{" youtube.com ", "", "10.0.0.0/8"}
+	if err := a.SaveSettings(s); err != nil {
+		t.Fatal(err)
+	}
+	if got := a.GetState().Settings.ProxyRules; strings.Join(got, ",") != "youtube.com,10.0.0.0/8" {
+		t.Fatalf("saved %q", got)
+	}
+	s.DirectRules = []string{"not a rule"}
+	if err := a.SaveSettings(s); err == nil || !strings.Contains(err.Error(), "not a rule") {
+		t.Fatalf("invalid rule: %v", err)
+	}
+	if got := a.GetState().Settings.DirectRules; len(got) != 0 {
+		t.Fatalf("invalid rule was stored: %q", got)
+	}
+}

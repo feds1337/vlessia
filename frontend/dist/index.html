@@ -21,9 +21,20 @@
     </div>
 
     <dl class="meters">
-      <div><dt>Отправка</dt><dd id="up">0 Б/с</dd></div>
-      <div><dt>Получение</dt><dd id="down">0 Б/с</dd></div>
+      <div><dt><i class="key key-up" aria-hidden="true"></i>Отправка</dt><dd id="up">0 Б/с</dd></div>
+      <div><dt><i class="key key-down" aria-hidden="true"></i>Получение</dt><dd id="down">0 Б/с</dd></div>
     </dl>
+
+    <div class="graph" id="graph" aria-label="Скорость за последние полторы минуты">
+      <svg viewBox="0 0 89 40" preserveAspectRatio="none" aria-hidden="true">
+        <path class="graph-area" id="graph-area"/>
+        <path class="graph-down" id="graph-down"/>
+        <path class="graph-up" id="graph-up"/>
+        <line class="graph-cross" id="graph-cross" y1="0" y2="40" hidden/>
+      </svg>
+      <div class="graph-tip" id="graph-tip" hidden></div>
+    </div>
+    <p class="totals" id="totals"></p>
 
     <div class="dock-actions">
       <div class="mode" id="mode-seg" role="radiogroup" aria-label="Режим">
@@ -96,6 +107,10 @@
             </select>
           </label>
           <label class="check"><input type="checkbox" name="bypassRu"> Российские сайты (.ru, .su, .рф) открывать напрямую</label>
+          <label class="check"><input type="checkbox" name="autoReconnect"> Переподключаться, если VPN перестал работать</label>
+          <p class="hint">Клиент проверяет соединение каждые 20 секунд. Если сервер перестал отвечать, Vlessia переподключится, а если не поможет — перейдёт на самый быстрый сервер той же подписки.</p>
+          <label class="check"><input type="checkbox" name="autoBest"> Подключаться к самому быстрому серверу подписки</label>
+          <p class="hint">Перед подключением клиент измеряет пинг серверов из подписки выбранного и берёт самый быстрый.</p>
           <details class="more">
             <summary>Дополнительно</summary>
             <label class="row-field"><span>DNS-серверы</span><input class="field-input" name="dns" aria-describedby="dns-hint"></label>
@@ -113,6 +128,20 @@
           <p class="hint" id="autostart-hint"></p>
           <label class="check"><input type="checkbox" name="autoConnect"> Подключаться к выбранному серверу при запуске</label>
           <label class="check"><input type="checkbox" name="sound"> Звук при подключении</label>
+        </section>
+
+        <section>
+          <h3>Правила для сайтов</h3>
+          <div class="pair">
+            <label class="row-field"><span>Всегда через VPN</span><textarea name="proxyRules" rows="4" spellcheck="false" placeholder="youtube.com&#10;instagram.com"></textarea></label>
+            <label class="row-field"><span>Всегда напрямую</span><textarea name="directRules" rows="4" spellcheck="false" placeholder="gosuslugi.ru&#10;95.163.0.0/16"></textarea></label>
+          </div>
+          <p class="hint">По одному на строку: домен (вместе с поддоменами), IP-адрес или подсеть. «Через VPN» важнее «Напрямую» и галочки про российские сайты.</p>
+        </section>
+
+        <section>
+          <h3>Оформление</h3>
+          <label class="check"><input type="checkbox" name="animations"> Анимации</label>
         </section>
 
         <section>

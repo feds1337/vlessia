@@ -574,6 +574,87 @@ dialog h2 { margin: 0; font-size: 18px; font-weight: 650; letter-spacing: -.01em
   .dock-foot { margin-top: 10px; }
 }
 
+/* ---------- dropdowns (see enhanceSelect) ---------- */
+
+.dropdown { position: relative; }
+.dropdown-btn {
+  width: 100%;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  text-align: left;
+  transition: border-color .15s ease;
+}
+.dropdown-btn:hover { border-color: color-mix(in srgb, var(--ink) 22%, var(--line)); }
+.dropdown.open .dropdown-btn, .dropdown-btn:focus-visible { border-color: var(--lagoon); outline: none; }
+.dropdown-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dropdown-btn svg {
+  width: 16px; height: 16px; flex: none;
+  fill: none; stroke: var(--muted); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
+  transition: transform .2s ease;
+}
+.dropdown.open .dropdown-btn svg { transform: rotate(180deg); }
+
+.dropdown-list {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0; right: 0;
+  z-index: 20;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: 0 16px 36px -14px rgba(15, 23, 32, .4);
+  transform-origin: top center;
+  outline: none;
+}
+.dropdown.up .dropdown-list { top: auto; bottom: calc(100% + 4px); transform-origin: bottom center; }
+.dropdown-list li {
+  position: relative;
+  padding: 7px 10px 7px 30px;
+  border-radius: 6px;
+  cursor: pointer;
+  outline: none;
+}
+.dropdown-list li:hover, .dropdown-list li:focus { background: var(--hover); }
+.dropdown-list li[aria-selected="true"] { color: var(--lagoon); font-weight: 550; }
+.dropdown-list li[aria-selected="true"]::before {
+  /* check mark */
+  content: "";
+  position: absolute;
+  left: 11px; top: 50%;
+  width: 9px; height: 5px;
+  border: solid currentColor;
+  border-width: 0 0 2px 2px;
+  transform: translateY(-70%) rotate(-45deg);
+}
+
+/* ---------- "the fastest server" row ---------- */
+
+.row.auto { margin-bottom: 2px; }
+.auto-icon {
+  width: 20px; height: 20px; flex: none;
+  fill: none; stroke: var(--lagoon); stroke-width: 2; stroke-linejoin: round;
+}
+.row.auto.selected .auto-icon { fill: var(--lagoon); }
+.auto-state { flex: none; font-size: 12.5px; color: var(--lagoon); font-weight: 550; }
+/* The server auto picked: marked, but the auto row is the selection. */
+.row.picked::before {
+  content: "";
+  position: absolute;
+  left: 0; top: 14px; bottom: 14px;
+  width: 3px;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--lagoon) 55%, transparent);
+}
+
 /* ---------- motion ----------
    Motion answers something that happened: a tab opens, a dialog appears,
    the connection comes up. Settings → "Анимации" (and the system's reduce
@@ -600,6 +681,9 @@ dialog[open]::backdrop { animation: fade-in .22s ease-out; }
 .ping.fresh { animation: fade-in .3s ease-out; }
 .row { transition: background-color .15s ease; }
 .graph-tip { animation: fade-in .12s ease-out; }
+.dropdown-list:not([hidden]) { animation: pop .18s cubic-bezier(.2, .8, .2, 1); }
+.dropdown.up .dropdown-list:not([hidden]) { animation-name: pop-up; }
+@keyframes pop-up { from { opacity: 0; transform: translateY(-8px) scale(.98); } }
 
 /* Waiting: the button breathes. */
 .dock[data-state="connecting"] .toggle,

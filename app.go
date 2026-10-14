@@ -431,6 +431,18 @@ func (a *App) SetMode(mode string) error {
 	return a.SaveSettings(s)
 }
 
+// SetAutoBest turns "connect to the fastest server" on or off. Turned on
+// while connected, it reconnects to the fastest server right away.
+func (a *App) SetAutoBest(on bool) error {
+	var was bool
+	err := a.store.Update(func(d *store.Data) { was, d.Settings.AutoBest = d.Settings.AutoBest, on })
+	a.emitState()
+	if err != nil || !on || was {
+		return err
+	}
+	return a.reconnectIfActive()
+}
+
 // RestartAsAdmin relaunches the app elevated and connects there.
 func (a *App) RestartAsAdmin() error {
 	args := fmt.Sprintf("--wait-pid %d --connect", os.Getpid())

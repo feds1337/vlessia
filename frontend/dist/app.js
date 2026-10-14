@@ -136,7 +136,7 @@ function renderServers() {
   const q = $("#search").value.trim().toLowerCase();
   const servers = state.servers.filter((s) => !q || s.name.toLowerCase().includes(q) || s.address.toLowerCase().includes(q));
 
-  let html = "";
+  let html = q ? "" : autoRow();
   let lastGroup = null;
   for (const s of servers) {
     const group = s.subId || "";
@@ -149,7 +149,7 @@ function renderServers() {
       lastGroup = group;
     }
     html += `
-      <div class="row ${s.id === state.selected ? "selected" : ""}" data-id="${s.id}" tabindex="0">
+      <div class="row ${s.id === state.selected ? (state.settings.autoBest ? "picked" : "selected") : ""}" data-id="${s.id}" tabindex="0">
         <div class="row-main">
           <div class="row-name" title="${esc(s.name)}">${esc(s.name)}</div>
           <div class="row-meta"><span class="proto">${esc(protoLine(s))}</span>${esc(s.address)}:${s.port}</div>
@@ -163,6 +163,25 @@ function renderServers() {
       </div>`;
   }
   list.innerHTML = html || `<div class="empty"><b>Ничего не найдено</b>Попробуйте другое название или адрес.</div>`;
+}
+
+// autoRow: "the fastest server" as the first entry of the list. It picks by
+// ping among the servers of the selected one's subscription.
+function autoRow() {
+  const sel = state.servers.find((s) => s.id === state.selected);
+  if (!sel || state.servers.filter((s) => s.subId === sel.subId).length < 2) return "";
+  const on = state.settings.autoBest;
+  const where = sel.subId ? `подписки «${esc(subTitle(state.subscriptions.find((x) => x.id === sel.subId)))}»` : "добавленных вручную";
+  const meta = on && state.status.state === "connected" ? `Сейчас ${esc(sel.name)}` : `По пингу среди серверов ${where}`;
+  return `
+    <div class="row auto ${on ? "selected" : ""}" data-auto="1" tabindex="0" role="switch" aria-checked="${on}">
+      <svg class="auto-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M13 2 4 14h7l-1 8 9-12h-7z"/></svg>
+      <div class="row-main">
+        <div class="row-name">Самый быстрый сервер</div>
+        <div class="row-meta">${meta}</div>
+      </div>
+      <span class="auto-state">${on ? "Включено" : ""}</span>
+    </div>`;
 }
 
 // ---------- connection dock ----------
@@ -394,12 +413,12 @@ function fillSettings() {
   f.sound.checked = s.sound;
   f.autoConnect.checked = s.autoConnect;
   f.autoReconnect.checked = !s.noAutoReconnect;
-  f.autoBest.checked = s.autoBest;
   f.proxyRules.value = (s.proxyRules || []).join("\n");
   f.directRules.value = (s.directRules || []).join("\n");
   f.animations.checked = !s.noAnimations;
   f.updateCheck.checked = !s.noUpdateCheck;
   f.logLevel.value = s.logLevel;
+  $$("#settings-form select").forEach(syncSelect);
   api().GetAutostart().then(renderAutostart);
   renderUpdate();
 }
@@ -415,7 +434,7 @@ function readSettings() {
     sound: f.sound.checked,
     autoConnect: f.autoConnect.checked,
     noAutoReconnect: !f.autoReconnect.checked,
-    autoBest: f.autoBest.checked,
+    autoBest: state.settings.autoBest, // set from the server list
     proxyRules: f.proxyRules.value.split("\n"),
     directRules: f.directRules.value.split("\n"),
     noAnimations: !f.animations.checked,
@@ -497,6 +516,13 @@ async function refreshLogs() {
   if (atBottom) pre.scrollTop = pre.scrollHeight;
 }
 
+function toggleAuto() {
+  const on = !state.settings.autoBest;
+  call("SetAutoBest", on).then(() => {
+    if (on) toast(state.status.state === "connected" ? "Переподключаюсь к самому быстрому серверу" : "Перед подключением выберу самый быстрый сервер");
+  }).catch(() => {});
+}
+
 // The underline slides to the active tab.
 function moveTabMark() {
   const tab = $(".tab.active");
@@ -546,7 +572,109 @@ function render() {
   renderSubs();
 }
 
+// ---------- dropdowns ----------
+// The system draws a <select>'s list itself, so it cannot be animated or
+// styled. Each select gets a button and an animated list of its own; the
+// hidden select keeps the value, so forms read it as before.
+
+function enhanceSelect(sel) {
+  // Inside a <label>, clicks on the list would go to the hidden select.
+  const lab = sel.closest("label");
+  if (lab) {
+    const div = document.createElement("div");
+    div.className = lab.className;
+    div.append(...lab.childNodes);
+    lab.replaceWith(div);
+  }
+  const box = document.createElement("div");
+  box.className = "dropdown";
+  box.innerHTML = `
+    <button type="button" class="dropdown-btn" aria-haspopup="listbox" aria-expanded="false">
+      <span class="dropdown-label"></span>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+    </button>
+    <ul class="dropdown-list" role="listbox" tabindex="-1" hidden></ul>`;
+  sel.hidden = true;
+  sel.after(box);
+  box.prepend(sel);
+  const btn = box.querySelector(".dropdown-btn");
+  const list = box.querySelector(".dropdown-list");
+  const label = box.parentElement.querySelector(":scope > span")?.textContent;
+  if (label) btn.setAttribute("aria-label", label);
+
+  const items = () => [...list.children];
+  const close = (focus) => {
+    if (list.hidden) return;
+    list.hidden = true;
+    box.classList.remove("open", "up");
+    btn.setAttribute("aria-expanded", "false");
+    if (focus) btn.focus();
+  };
+  const choose = (value) => {
+    if (sel.value !== value) {
+      sel.value = value;
+      sel.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+    syncSelect(sel);
+    close(true);
+  };
+  const open = () => {
+    list.innerHTML = [...sel.options].map((o) =>
+      `<li role="option" data-value="${esc(o.value)}" aria-selected="${o.value === sel.value}" tabindex="-1">${esc(o.textContent)}</li>`).join("");
+    list.hidden = false;
+    box.classList.add("open");
+    btn.setAttribute("aria-expanded", "true");
+    // Open upwards when the list would leave the scrolling area.
+    const area = box.closest(".settings") || document.body;
+    const room = area.getBoundingClientRect().bottom - btn.getBoundingClientRect().bottom;
+    box.classList.toggle("up", room < list.offsetHeight + 12);
+    (list.querySelector('[aria-selected="true"]') || list.firstElementChild)?.focus();
+  };
+
+  btn.addEventListener("click", () => (list.hidden ? open() : close(true)));
+  btn.addEventListener("keydown", (e) => {
+    if (["ArrowDown", "ArrowUp", "Enter", " "].includes(e.key)) {
+      e.preventDefault();
+      open();
+    }
+  });
+  list.addEventListener("click", (e) => {
+    const li = e.target.closest("li");
+    if (li) choose(li.dataset.value);
+  });
+  list.addEventListener("keydown", (e) => {
+    const all = items();
+    const i = all.indexOf(document.activeElement);
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault();
+      all[Math.min(all.length - 1, Math.max(0, i + (e.key === "ArrowDown" ? 1 : -1)))]?.focus();
+    } else if (e.key === "Home" || e.key === "End") {
+      e.preventDefault();
+      all[e.key === "Home" ? 0 : all.length - 1]?.focus();
+    } else if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      if (i >= 0) choose(all[i].dataset.value);
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      close(true);
+    } else if (e.key === "Tab") {
+      close(false);
+    }
+  });
+  document.addEventListener("pointerdown", (e) => {
+    if (!box.contains(e.target)) close(false);
+  });
+  syncSelect(sel);
+}
+
+// syncSelect shows the select's current choice on its button.
+function syncSelect(sel) {
+  const label = sel.closest(".dropdown")?.querySelector(".dropdown-label");
+  if (label) label.textContent = sel.selectedOptions[0]?.textContent ?? "";
+}
+
 function bind() {
+  $$("#settings-form select").forEach(enhanceSelect);
   $$(".tab").forEach((b) => b.addEventListener("click", () => showView(b.dataset.view)));
 
   $("#power").addEventListener("click", () => call("Toggle").catch(() => {}));
@@ -600,6 +728,7 @@ function bind() {
     if (e.target.closest("#bot-link")) return api().OpenURL(BOT_URL);
     const row = e.target.closest(".row");
     if (!row) return;
+    if (row.dataset.auto) return toggleAuto();
     const id = row.dataset.id;
     const act = e.target.closest("[data-act]")?.dataset.act;
     if (act === "copy") {
@@ -608,17 +737,22 @@ function bind() {
     }
     if (act === "del") return call("DeleteServer", id).then(() => toast("Сервер удалён")).catch(() => {});
     if (act === "login") return askCredentials(id, false);
-    if (id !== state.selected) call("SelectServer", id).catch(() => {});
+    if (state.settings.autoBest) call("SetAutoBest", false).then(() => call("SelectServer", id)).catch(() => {});
+    else if (id !== state.selected) call("SelectServer", id).catch(() => {});
   });
   list.addEventListener("dblclick", (e) => {
     const row = e.target.closest(".row");
     if (row && !e.target.closest("[data-act]") && state.status.state === "disconnected") {
+      if (row.dataset.auto) return call("SetAutoBest", true).then(() => call("Connect")).catch(() => {});
       call("SelectServer", row.dataset.id).then(() => call("Connect")).catch(() => {});
     }
   });
   list.addEventListener("keydown", (e) => {
     const row = e.target.closest(".row");
-    if (row && e.key === "Enter") call("SelectServer", row.dataset.id).catch(() => {});
+    if (row && e.key === "Enter") {
+      if (row.dataset.auto) toggleAuto();
+      else call("SelectServer", row.dataset.id).catch(() => {});
+    }
   });
 
   $("#sub-form").addEventListener("submit", async (e) => {

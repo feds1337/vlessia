@@ -203,6 +203,7 @@ function renderDock() {
   }
   lastDockState = st.state;
   dock.dataset.state = st.state;
+  $("#graph").classList.toggle("live", st.state === "connected" && (traffic?.history?.length || 0) > 1);
 
   $("#status-word").textContent = {
     connected: "Подключено", connecting: "Подключение…", disconnecting: "Отключение…", disconnected: "Отключено",
@@ -275,57 +276,71 @@ function renderTraffic(t) {
   renderTotals();
 }
 
-// graphScale: the top of the plot, with headroom, never below 64 KB/s so
-// an idle connection draws a calm line instead of noise.
-function graphScale(hist) {
-  let max = 64 * 1024;
-  for (const p of hist) max = Math.max(max, p.up, p.down);
-  return max * 1.15;
+// The graph fills the dock from the bottom up to GRAPH_TOP (in % of its
+// height). Each second the curve slides left by one step, so it moves
+// continuously instead of jumping.
+const GRAPH_TOP = 38;
+let graphMax = 0; // the scale, eased towards the data
+
+// soften evens out single-second spikes for drawing (weights 1-2-3-2-1).
+function soften(v) {
+  const at = (i) => v[Math.min(v.length - 1, Math.max(0, i))];
+  return v.map((x, i) => (at(i - 2) + 2 * at(i - 1) + 3 * x + 2 * at(i + 1) + at(i + 2)) / 9);
 }
 
-function graphPoints(hist, key, max) {
-  const offset = HISTORY - hist.length;
-  return hist.map((p, i) => [offset + i, 40 - (p[key] / max) * 38]);
+// curve draws a smooth line through the points without overshooting
+// (monotone cubic interpolation), so it never dips below zero.
+function curve(pts) {
+  const n = pts.length;
+  if (n < 2) return "";
+  const d = [], m = [];
+  for (let i = 0; i < n - 1; i++) d.push((pts[i + 1][1] - pts[i][1]) / (pts[i + 1][0] - pts[i][0]));
+  m.push(d[0]);
+  for (let i = 1; i < n - 1; i++) m.push(d[i - 1] * d[i] <= 0 ? 0 : (d[i - 1] + d[i]) / 2);
+  m.push(d[n - 2]);
+  for (let i = 0; i < n - 1; i++) {
+    if (d[i] === 0) { m[i] = m[i + 1] = 0; continue; }
+    const a = m[i] / d[i], b = m[i + 1] / d[i], h = a * a + b * b;
+    if (h > 9) { const t = 3 / Math.sqrt(h); m[i] = t * a * d[i]; m[i + 1] = t * b * d[i]; }
+  }
+  let path = `M${pts[0][0].toFixed(2)} ${pts[0][1].toFixed(2)}`;
+  for (let i = 0; i < n - 1; i++) {
+    const [x0, y0] = pts[i], [x1, y1] = pts[i + 1], dx = (x1 - x0) / 3;
+    path += `C${(x0 + dx).toFixed(2)} ${(y0 + m[i] * dx).toFixed(2)} ${(x1 - dx).toFixed(2)} ${(y1 - m[i + 1] * dx).toFixed(2)} ${x1.toFixed(2)} ${y1.toFixed(2)}`;
+  }
+  return path;
 }
 
 function drawGraph() {
   const hist = traffic?.history || [];
-  const has = hist.length > 1;
-  $("#graph").classList.toggle("empty", !has);
-  if (!has) {
+  const g = $("#graph");
+  const live = hist.length > 1 && state?.status.state === "connected";
+  g.classList.toggle("live", live);
+  if (hist.length < 2) {
     for (const id of ["#graph-area", "#graph-down", "#graph-up"]) $(id).removeAttribute("d");
     return;
   }
-  const max = graphScale(hist);
-  const line = (pts) => pts.map(([x, y], i) => `${i ? "L" : "M"}${x} ${y.toFixed(2)}`).join("");
-  const down = graphPoints(hist, "down", max);
-  $("#graph-down").setAttribute("d", line(down));
-  $("#graph-area").setAttribute("d", `${line(down)}L${down[down.length - 1][0]} 40L${down[0][0]} 40Z`);
-  $("#graph-up").setAttribute("d", line(graphPoints(hist, "up", max)));
-}
+  let target = 64 * 1024;
+  for (const p of hist) target = Math.max(target, p.up, p.down);
+  target *= 1.15;
+  graphMax = graphMax ? graphMax + (target - graphMax) * 0.35 : target;
 
-// The crosshair shows one second of the history.
-function graphHover(e) {
-  const hist = traffic?.history || [];
-  const box = $("#graph").getBoundingClientRect();
-  const x = Math.round(((e.clientX - box.left) / box.width) * (HISTORY - 1));
-  const i = x - (HISTORY - hist.length);
-  const tip = $("#graph-tip");
-  const cross = $("#graph-cross");
-  if (i < 0 || i >= hist.length) {
-    tip.hidden = true;
-    cross.setAttribute("hidden", "");
-    return;
-  }
-  const ago = hist.length - 1 - i;
-  cross.setAttribute("x1", x);
-  cross.setAttribute("x2", x);
-  cross.removeAttribute("hidden"); // SVG elements have no .hidden
-  tip.innerHTML = `<b>${ago ? ago + " с назад" : "Сейчас"}</b>Получение ${fmtSpeed(hist[i].down)}<br>Отправка ${fmtSpeed(hist[i].up)}`;
-  tip.hidden = false;
-  const left = Math.min(Math.max(e.clientX - box.left, 0), box.width);
-  tip.style.left = `${left}px`;
-  tip.classList.toggle("flip", left > box.width / 2);
+  // The newest point sits one step past the right edge and slides in.
+  const step = 100 / (HISTORY - 2);
+  const x0 = 100 + step - (hist.length - 1) * step;
+  const y = (v) => 100 - Math.min(v / graphMax, 1.6) * (100 - GRAPH_TOP);
+  const pts = (key) => soften(hist.map((p) => p[key])).map((v, i) => [x0 + i * step, y(v)]);
+  const down = curve(pts("down"));
+  $("#graph-down").setAttribute("d", down);
+  $("#graph-area").setAttribute("d", `${down}L${100 + step} 101L${x0} 101Z`);
+  $("#graph-up").setAttribute("d", curve(pts("up")));
+
+  const scroll = $("#graph-scroll");
+  scroll.style.transition = "none";
+  scroll.style.transform = "translateX(0)";
+  void scroll.getBoundingClientRect();
+  scroll.style.transition = "";
+  scroll.style.transform = `translateX(${-step}px)`;
 }
 
 function renderTotals() {
@@ -523,6 +538,34 @@ function toggleAuto() {
   }).catch(() => {});
 }
 
+// Disclosures (<details class="more">) open and close smoothly.
+function animateDetails(details) {
+  const summary = details.querySelector("summary");
+  const body = details.querySelector(".more-body");
+  let anim = null;
+  summary.addEventListener("click", (e) => {
+    if (document.documentElement.classList.contains("no-anim")) return;
+    e.preventDefault();
+    anim?.cancel();
+    const opening = !details.open;
+    if (opening) details.open = true;
+    const full = body.scrollHeight;
+    const frames = [{ height: "0px", opacity: 0 }, { height: `${full}px`, opacity: 1 }];
+    anim = body.animate(opening ? frames : frames.reverse(), { duration: 240, easing: "cubic-bezier(.2,.8,.2,1)" });
+    // Finish by a timer too: animations stall while the window is hidden.
+    const done = () => {
+      if (!opening) details.open = false;
+      anim = null;
+    };
+    const timer = setTimeout(done, 300);
+    anim.onfinish = () => {
+      clearTimeout(timer);
+      done();
+    };
+    anim.oncancel = () => clearTimeout(timer);
+  });
+}
+
 // The underline slides to the active tab.
 function moveTabMark() {
   const tab = $(".tab.active");
@@ -675,6 +718,7 @@ function syncSelect(sel) {
 
 function bind() {
   $$("#settings-form select").forEach(enhanceSelect);
+  $$("details.more").forEach(animateDetails);
   $$(".tab").forEach((b) => b.addEventListener("click", () => showView(b.dataset.view)));
 
   $("#power").addEventListener("click", () => call("Toggle").catch(() => {}));
@@ -840,11 +884,6 @@ function bind() {
   });
   window.runtime.EventsOn("traffic", renderTraffic);
   window.runtime.EventsOn("notice", (text) => toast(text));
-  $("#graph").addEventListener("mousemove", graphHover);
-  $("#graph").addEventListener("mouseleave", () => {
-    $("#graph-tip").hidden = true;
-    $("#graph-cross").setAttribute("hidden", "");
-  });
   window.addEventListener("resize", moveTabMark);
   window.runtime.EventsOn("ping", (p) => {
     pings[p.id] = p.ms;

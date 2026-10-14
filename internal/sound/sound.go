@@ -5,95 +5,95 @@ import (
 	"bytes"
 	"encoding/binary"
 	"math"
-	"math/rand"
 )
 
 const sampleRate = 44100
 
-// Fart renders the connection sound as a 16-bit mono WAV file. It is
-// generated rather than shipped as a recording, and is deterministic (fixed
-// seed), so it sounds the same every time.
-func Fart() []byte {
-	rng := rand.New(rand.NewSource(42))
-	const dur = 1.15
+// note is one soft bell-like strike.
+type note struct {
+	at   float64 // start, seconds
+	freq float64 // Hz
+	gain float64
+}
+
+// Connected renders the connection sound as a 16-bit mono WAV file: two
+// quiet, rounded strikes a fifth apart (E5, then B5), like a small
+// marimba or a soft glass bell, with a short room around them. It is
+// generated rather than shipped as a recording, so it is the same on every
+// system.
+func Connected() []byte {
+	const dur = 1.6
 	n := int(dur * sampleRate)
-	out := make([]float64, n)
-
-	var (
-		phase    float64
-		wobble   float64 // slow random walk of the pitch
-		lp1, lp2 float64 // two one-pole low-pass stages ("muffled")
-		noiseLP  float64
-		flutter  = 1.0
-		gate     = 1.0
-		jitter   = 1.0
-		dcIn     float64 // DC blocker state
-		dcOut    float64
-	)
-	for i := 0; i < n; i++ {
-		t := float64(i) / sampleRate
-		u := t / dur
-
-		// Pitch: quick rise, then a long sag towards the end.
-		base := 95 + 25*math.Sin(math.Min(u/0.15, 1)*math.Pi/2) - 70*math.Pow(u, 1.6)
-		wobble += rng.NormFloat64() * 0.0025
-		wobble *= 0.9995
-		f := math.Max(base*(1+wobble)*jitter, 38)
-
-		phase += f / sampleRate
-		if phase >= 1 {
-			phase -= 1
-			// Cycle-to-cycle irregularity of the vibrating "valve".
-			flutter = 0.65 + 0.35*rng.Float64()
-			jitter = 1 + rng.NormFloat64()*0.07 // rough, not a clean tone
-			if u > 0.62 {
-				// Sputtering tail: some cycles drop out.
-				if rng.Float64() < (u-0.62)*1.8 {
-					gate = 0.05
-				} else {
-					gate = 1
-				}
-			}
-		}
-
-		// Asymmetric pulse: fast opening, slower closing, then shut.
-		var pulse float64
-		const open = 0.42
-		if phase < open {
-			x := phase / open
-			pulse = math.Sin(math.Pi*math.Pow(x, 0.7)) * math.Exp(-1.5*x)
-		}
-		pulse = pulse*2 - 0.35 // remove most of the DC
-
-		// Air noise.
-		noiseLP += (rng.Float64()*2 - 1 - noiseLP) * 0.08
-
-		x := pulse*flutter*gate + noiseLP*0.35
-
-		// Muffle: two cascaded low-pass filters (~700 Hz).
-		const a = 0.095
-		lp1 += a * (x - lp1)
-		lp2 += a * (lp1 - lp2)
-
-		// DC blocker (~25 Hz high-pass): the pulses are one-sided, and an
-		// offset would click at the start and end.
-		dcOut = lp2 - dcIn + 0.9965*dcOut
-		dcIn = lp2
-
-		// Envelope: soft attack, slight swell, fade out.
-		env := math.Min(t/0.02, 1) * (1 + 0.25*math.Sin(u*math.Pi)) * math.Pow(1-u, 0.6)
-		out[i] = dcOut * env
+	dry := make([]float64, n)
+	for _, nt := range []note{{0, 659.25, 1}, {0.115, 987.77, 0.8}} {
+		strike(dry, nt)
 	}
 
-	// Normalise to -2 dBFS.
+	// The room: a few damped echoes (Schroeder comb filters), mixed low.
+	wet := make([]float64, n)
+	for _, c := range []struct {
+		delay    float64
+		feedback float64
+	}{{0.0297, 0.62}, {0.0371, 0.58}, {0.0411, 0.55}, {0.0437, 0.52}} {
+		d := int(c.delay * sampleRate)
+		buf := make([]float64, n)
+		lp := 0.0
+		for i := range buf {
+			in := dry[i]
+			if i >= d {
+				// A low-pass in the loop makes the echoes darker, as in a room.
+				lp = 0.7*buf[i-d] + 0.3*lp
+				in += c.feedback * lp
+			}
+			buf[i] = in
+			wet[i] += buf[i] / 4
+		}
+	}
+
+	out := make([]float64, n)
+	soft := 0.0
+	for i := range out {
+		v := 0.86*dry[i] + 0.22*wet[i]
+		// Gentle low-pass: nothing sharp at the top.
+		soft += 0.55 * (v - soft)
+		out[i] = soft
+		if t := float64(n-i) / sampleRate; t < 0.25 { // fade the tail out
+			out[i] *= t / 0.25
+		}
+	}
+
+	// Quiet: peak at about -13 dBFS.
 	peak := 0.0
 	for _, v := range out {
 		peak = math.Max(peak, math.Abs(v))
 	}
-	gain := 0.8 / peak
+	gain := 0.22 / peak
+	return encodeWAV(out, gain)
+}
 
+// strike adds one note: a sine with a short FM shimmer at the start (the
+// "touch"), a quieter octave that fades sooner, and a long smooth decay.
+func strike(dst []float64, nt note) {
+	start := int(nt.at * sampleRate)
+	for i := start; i < len(dst); i++ {
+		t := float64(i-start) / sampleRate
+		attack := 1.0
+		if t < 0.008 { // a rounded 8 ms attack, no click
+			attack = 0.5 - 0.5*math.Cos(math.Pi*t/0.008)
+		}
+		index := 1.1 * math.Exp(-t/0.06) // brightness of the touch, gone in ~0.1 s
+		mod := index * math.Sin(2*math.Pi*nt.freq*2*t)
+		body := math.Sin(2*math.Pi*nt.freq*t+mod) * math.Exp(-t/0.42)
+		octave := 0.16 * math.Sin(2*math.Pi*nt.freq*2*t) * math.Exp(-t/0.16)
+		fifth := 0.04 * math.Sin(2*math.Pi*nt.freq*3*t) * math.Exp(-t/0.07)
+		dst[i] += nt.gain * attack * (body + octave + fifth)
+	}
+}
+
+func encodeWAV(samples []float64, gain float64) []byte {
 	var b bytes.Buffer
 	w := func(v any) { _ = binary.Write(&b, binary.LittleEndian, v) }
+	n := len(samples)
 	b.WriteString("RIFF")
 	w(uint32(36 + n*2))
 	b.WriteString("WAVEfmt ")
@@ -106,7 +106,7 @@ func Fart() []byte {
 	w(uint16(16))
 	b.WriteString("data")
 	w(uint32(n * 2))
-	for _, v := range out {
+	for _, v := range samples {
 		w(int16(math.Round(v * gain * 32767)))
 	}
 	return b.Bytes()

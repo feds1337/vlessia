@@ -20,7 +20,7 @@ var (
 func PlayConnected() {
 	once.Do(func() {
 		p := filepath.Join(os.TempDir(), "vlessia-connected.wav")
-		if os.WriteFile(p, Fart(), 0o644) == nil {
+		if os.WriteFile(p, Connected(), 0o644) == nil {
 			path = p
 		}
 	})

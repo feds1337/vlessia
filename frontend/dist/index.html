@@ -8,6 +8,20 @@
 </head>
 <body>
   <aside class="dock" id="dock" data-state="disconnected">
+    <!-- Speed of the last minute and a half, behind the whole column. -->
+    <svg class="dock-graph" id="graph" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+      <defs>
+        <linearGradient id="graph-fill" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stop-color="currentColor" stop-opacity=".26"/>
+          <stop offset="1" stop-color="currentColor" stop-opacity="0"/>
+        </linearGradient>
+      </defs>
+      <g id="graph-scroll">
+        <path class="graph-area" id="graph-area" fill="url(#graph-fill)"/>
+        <path class="graph-down" id="graph-down"/>
+        <path class="graph-up" id="graph-up"/>
+      </g>
+    </svg>
     <div class="brand">
       <svg viewBox="0 0 32 32" aria-hidden="true"><path d="M3 2h26v13c0 8-7 12-13 15C10 27 3 23 3 15z"/><circle cx="16" cy="13" r="3.5" class="cut"/><rect x="14.4" y="13" width="3.2" height="9" class="cut"/></svg>
       Vlessia
@@ -25,15 +39,6 @@
       <div><dt><i class="key key-down" aria-hidden="true"></i>Получение</dt><dd id="down">0 Б/с</dd></div>
     </dl>
 
-    <div class="graph" id="graph" aria-label="Скорость за последние полторы минуты">
-      <svg viewBox="0 0 89 40" preserveAspectRatio="none" aria-hidden="true">
-        <path class="graph-area" id="graph-area"/>
-        <path class="graph-down" id="graph-down"/>
-        <path class="graph-up" id="graph-up"/>
-        <line class="graph-cross" id="graph-cross" y1="0" y2="40" hidden/>
-      </svg>
-      <div class="graph-tip" id="graph-tip" hidden></div>
-    </div>
     <p class="totals" id="totals"></p>
 
     <div class="dock-actions">
@@ -111,11 +116,13 @@
           <p class="hint">Клиент проверяет соединение каждые 20 секунд. Если сервер перестал отвечать, Vlessia переподключится, а если не поможет — перейдёт на самый быстрый сервер той же подписки.</p>
           <details class="more">
             <summary>Дополнительно</summary>
-            <label class="row-field"><span>DNS-серверы</span><input class="field-input" name="dns" aria-describedby="dns-hint"></label>
-            <p class="hint" id="dns-hint">Через запятую. Первый также назначается адаптеру в режиме «Весь трафик».</p>
-            <div class="pair">
-              <label class="row-field"><span>Порт SOCKS5</span><input class="field-input" name="socksPort" type="number" min="1" max="65535"></label>
-              <label class="row-field"><span>Порт HTTP</span><input class="field-input" name="httpPort" type="number" min="1" max="65535"></label>
+            <div class="more-body">
+              <label class="row-field"><span>DNS-серверы</span><input class="field-input" name="dns" aria-describedby="dns-hint"></label>
+              <p class="hint" id="dns-hint">Через запятую. Первый также назначается адаптеру в режиме «Весь трафик».</p>
+              <div class="pair">
+                <label class="row-field"><span>Порт SOCKS5</span><input class="field-input" name="socksPort" type="number" min="1" max="65535"></label>
+                <label class="row-field"><span>Порт HTTP</span><input class="field-input" name="httpPort" type="number" min="1" max="65535"></label>
+              </div>
             </div>
           </details>
         </section>

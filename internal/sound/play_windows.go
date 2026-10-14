@@ -25,6 +25,6 @@ const (
 
 // PlayConnected plays the connection sound without blocking.
 func PlayConnected() {
-	once.Do(func() { wav = Fart() })
+	once.Do(func() { wav = Connected() })
 	_, _, _ = playSound.Call(uintptr(unsafe.Pointer(&wav[0])), 0, sndMemory|sndAsync|sndNoDefault)
 }

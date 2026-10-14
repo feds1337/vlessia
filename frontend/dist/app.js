@@ -6,6 +6,7 @@ const $$ = (sel) => document.querySelectorAll(sel);
 
 let state = null;
 let upd = null;
+let platform = "windows"; // "windows" | "darwin" | "linux"
 const pings = {};
 let logsTimer = null;
 
@@ -122,7 +123,7 @@ function subSummary(sub) {
 function renderServers() {
   const list = $("#server-list");
   if (!state.servers.length) {
-    list.innerHTML = `<div class="empty"><b>Добавьте первый сервер</b>Скопируйте ссылку на сервер или подписку от провайдера и нажмите «Вставить из буфера».</div>`;
+    list.innerHTML = `<div class="empty"><b>Добавьте первый сервер</b>Скопируйте ссылку на сервер или подписку от провайдера и нажмите «Вставить».</div>`;
     return;
   }
   const q = $("#search").value.trim().toLowerCase();
@@ -136,14 +137,14 @@ function renderServers() {
       const sub = state.subscriptions.find((x) => x.id === s.subId);
       const sum = subSummary(sub);
       html += s.subId
-        ? `<div class="group">${esc(subTitle(sub))}${sum ? `<small>${esc(sum)}</small>` : ""}</div>`
-        : `<div class="group">Добавленные вручную</div>`;
+        ? `<div class="group"><span title="${esc(subTitle(sub))}">${esc(subTitle(sub))}</span>${sum ? `<small>${esc(sum)}</small>` : ""}</div>`
+        : `<div class="group"><span>Добавленные вручную</span></div>`;
       lastGroup = group;
     }
     html += `
       <div class="row ${s.id === state.selected ? "selected" : ""}" data-id="${s.id}" tabindex="0">
         <div class="row-main">
-          <div class="row-name">${esc(s.name)}</div>
+          <div class="row-name" title="${esc(s.name)}">${esc(s.name)}</div>
           <div class="row-meta"><span class="proto">${esc(protoLine(s))}</span>${esc(s.address)}:${s.port}</div>
         </div>
         <div class="row-actions">
@@ -173,6 +174,7 @@ function renderDock() {
     connected: "Подключено", connecting: "Подключение…", disconnecting: "Отключение…", disconnected: "Отключено",
   }[st.state];
   $("#status-server").textContent = srv ? srv.name : "Сервер не выбран";
+  $("#status-server").title = srv ? srv.name : "";
 
   let detail = "";
   if (st.state === "connected") {
@@ -203,7 +205,7 @@ function renderDock() {
   $("#admin-proxy").hidden = fullTunnel;
 
   const foot = [upd?.current && upd.current !== "dev" ? "Версия " + bareVersion(upd.current) : "Версия для разработки"];
-  if (st.admin) foot.push("права администратора");
+  if (st.admin && platform === "windows") foot.push("права администратора");
   $("#dock-foot").textContent = foot.join(", ");
 }
 
@@ -304,6 +306,13 @@ function renderAutostart(st) {
   $("#autostart").checked = st.enabled;
   const hint = $("#autostart-hint");
   hint.classList.remove("warn");
+  if (platform !== "windows") {
+    // TUN rights are requested by the helper when connecting, not at login.
+    hint.textContent = platform === "darwin"
+      ? "Клиент будет запускаться при входе в систему свёрнутым в Dock."
+      : "Клиент будет запускаться при входе в систему сразу в трей.";
+    return;
+  }
   if (!st.enabled) {
     hint.textContent = st.admin
       ? "Клиент будет запускаться сразу в трей с правами администратора — без окна UAC, все режимы работают."
@@ -565,9 +574,17 @@ function bind() {
   });
 }
 
+// Wording that differs by operating system.
+function applyPlatform() {
+  if (platform === "windows") return;
+  const tunOption = $('#settings-form select[name="mode"] option[value="tun"]');
+  tunOption.textContent = "Весь трафик — при подключении система попросит пароль администратора";
+}
+
 async function init() {
   bind();
-  [state, upd] = await Promise.all([api().GetState(), api().GetUpdate()]);
+  [state, upd, platform] = await Promise.all([api().GetState(), api().GetUpdate(), api().GetPlatform()]);
+  applyPlatform();
   render();
   renderUpdate();
 }

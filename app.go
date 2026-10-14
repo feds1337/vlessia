@@ -11,11 +11,12 @@ import (
 	"net/netip"
 	"net/url"
 	"os"
-	"os/exec"
 	"path/filepath"
+	goruntime "runtime"
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -39,6 +40,30 @@ import (
 type bridge interface {
 	Port() int
 	Close()
+}
+
+// tunSession is the system side of TUN mode (routes, DNS, the helper on
+// macOS/Linux). Done, if non-nil, is closed when it stops on its own.
+type tunSession interface {
+	Close()
+	Done() <-chan struct{}
+}
+
+// watchTUN disconnects when TUN mode stops behind the client's back (the
+// helper was killed), instead of showing a connection that no longer works.
+func (a *App) watchTUN(sess tunSession) {
+	<-sess.Done()
+	a.mu.Lock()
+	current := a.tunSess == sess
+	a.mu.Unlock()
+	if !current {
+		return
+	}
+	a.log.Printf("режим «Весь трафик» остановлен системой")
+	_ = a.Disconnect()
+	a.setStatus(func(s *Status) {
+		s.Error = "Режим «Весь трафик» остановлен: служебный процесс завершился"
+	})
 }
 
 // ErrNeedAdmin is returned when TUN mode is requested without elevation;
@@ -72,6 +97,9 @@ type App struct {
 	connectOnStart bool
 	autostarted    bool // launched by Windows logon
 	quitting       bool
+	// visible: the window is shown. Live traffic numbers are only sent to
+	// the UI then, so a VPN running all day in the tray costs no UI work.
+	visible atomic.Bool
 
 	upd updater
 
@@ -79,7 +107,8 @@ type App struct {
 
 	mu        sync.Mutex // guards the fields below
 	inst      *xray.Instance
-	bridge    bridge // full-tunnel protocol (WireGuard/AmneziaWG/OpenVPN), if any
+	bridge    bridge     // full-tunnel protocol (WireGuard/AmneziaWG/OpenVPN), if any
+	tunSess   tunSession // system side of TUN mode, if any
 	status    Status
 	stopStats chan struct{}
 }
@@ -94,6 +123,7 @@ func NewApp(st *store.Store, logger *log.Logger) *App {
 
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
+	a.visible.Store(!a.autostarted)
 	a.restoreLeftoverProxy()
 	a.upgradeServers()
 	a.tray = StartTray(a)
@@ -196,7 +226,8 @@ func (a *App) beforeClose(ctx context.Context) bool {
 	if a.quitting {
 		return false
 	}
-	runtime.WindowHide(ctx)
+	hideOnClose(ctx)
+	a.visible.Store(false)
 	return true
 }
 
@@ -211,6 +242,7 @@ func (a *App) onSecondInstance() {
 
 // ShowWindow brings the main window to front.
 func (a *App) ShowWindow() {
+	a.visible.Store(true)
 	runtime.WindowShow(a.ctx)
 	runtime.WindowUnminimise(a.ctx)
 }
@@ -778,7 +810,7 @@ func (a *App) Connect() error {
 		*s = Status{State: "connecting", Mode: settings.Mode, ServerID: srv.ID, Admin: tun.IsAdmin()}
 	})
 
-	inst, bridge, iface, err := a.start(srv, settings)
+	inst, bridge, sess, iface, err := a.start(srv, settings)
 	if err != nil {
 		a.log.Printf("подключение не удалось: %v", err)
 		a.setStatus(func(s *Status) {
@@ -791,8 +823,12 @@ func (a *App) Connect() error {
 	a.mu.Lock()
 	a.inst = inst
 	a.bridge = bridge
+	a.tunSess = sess
 	a.stopStats = stop
 	a.mu.Unlock()
+	if sess != nil && sess.Done() != nil {
+		go a.watchTUN(sess)
+	}
 	go a.statsLoop(inst, stop)
 	a.log.Printf("подключено: %s (%s), режим %s", srv.Name, srv.Address, settings.Mode)
 	if settings.Sound {
@@ -822,7 +858,7 @@ func (a *App) instance() *xray.Instance {
 
 // start launches everything needed for srv: the WireGuard/AmneziaWG bridge
 // if any, Xray, and then TUN or system proxy.
-func (a *App) start(srv *profile.Server, settings store.Settings) (*xray.Instance, bridge, string, error) {
+func (a *App) start(srv *profile.Server, settings store.Settings) (*xray.Instance, bridge, tunSession, string, error) {
 	opts := xray.Options{
 		SocksPort: settings.SocksPort,
 		HTTPPort:  settings.HTTPPort,
@@ -834,7 +870,7 @@ func (a *App) start(srv *profile.Server, settings store.Settings) (*xray.Instanc
 
 	// Ask for the OpenVPN login before touching the network.
 	if srv.OVPN != nil && srv.OVPN.NeedAuth && srv.OVPN.Username == "" {
-		return nil, nil, "", openvpn.ErrNeedAuth
+		return nil, nil, nil, "", openvpn.ErrNeedAuth
 	}
 	if srv.AccessKeyURL != "" {
 		a.refreshOutlineKey(srv)
@@ -850,34 +886,22 @@ func (a *App) start(srv *profile.Server, settings store.Settings) (*xray.Instanc
 	if settings.Mode == "tun" || srv.IsFullTunnel() || srv.Protocol == "hysteria2" {
 		ip, err := resolve(srv.Address)
 		if err != nil {
-			return nil, nil, "", fmt.Errorf("не удалось найти IP сервера %s: %w", srv.Address, err)
+			return nil, nil, nil, "", fmt.Errorf("не удалось найти IP сервера %s: %w", srv.Address, err)
 		}
 		serverIP = ip
 	}
 
 	if settings.Mode == "tun" {
-		if !tun.IsAdmin() {
-			return nil, nil, "", ErrNeedAdmin
+		if err := a.prepareTUN(srv, serverIP, &opts); err != nil {
+			return nil, nil, nil, "", err
 		}
-		if err := tun.EnsureWintun(a.store.Dir()); err != nil {
-			return nil, nil, "", err
-		}
-		iface, err := tun.DefaultInterface()
-		if err != nil {
-			return nil, nil, "", err
-		}
-		opts.TUN = true
-		opts.TunName = tun.AdapterName
-		opts.Interface = iface
-		opts.ServerAddress = serverIP
-		a.log.Printf("TUN: физический адаптер %q, сервер %s -> %s", iface, srv.Address, serverIP)
 	}
 
 	if srv.Protocol == "hysteria2" && srv.Insecure && srv.PinnedSHA == "" {
 		// Runs before TUN is up, so no adapter binding is needed.
 		res, err := hysteria.Probe(context.Background(), srv, serverIP, nil)
 		if err != nil {
-			return nil, nil, "", fmt.Errorf("Hysteria: сервер не отвечает: %w", err)
+			return nil, nil, nil, "", fmt.Errorf("Hysteria: сервер не отвечает: %w", err)
 		}
 		srv.PinnedSHA = res.CertSHA256
 		a.log.Printf("Hysteria: ссылка с insecure=1, закреплён текущий сертификат сервера %s", res.CertSHA256)
@@ -891,7 +915,7 @@ func (a *App) start(srv *profile.Server, settings store.Settings) (*xray.Instanc
 		}
 		t, err := openvpn.Start(srv.OVPN, serverIP, control, a.log.Printf)
 		if err != nil {
-			return nil, nil, "", err
+			return nil, nil, nil, "", err
 		}
 		br = t
 		opts.BridgePort = t.Port()
@@ -901,7 +925,7 @@ func (a *App) start(srv *profile.Server, settings store.Settings) (*xray.Instanc
 		awg.Verbose = settings.LogLevel == "debug"
 		endpoint, err := netip.ParseAddrPort(net.JoinHostPort(serverIP, strconv.Itoa(srv.Port)))
 		if err != nil {
-			return nil, nil, "", err
+			return nil, nil, nil, "", err
 		}
 		bindIdx := 0
 		if opts.Interface != "" {
@@ -911,20 +935,20 @@ func (a *App) start(srv *profile.Server, settings store.Settings) (*xray.Instanc
 		}
 		t, err := awg.Start(srv.WG, endpoint, bindIdx, a.log.Printf)
 		if err != nil {
-			return nil, nil, "", fmt.Errorf("AmneziaWG: %w", err)
+			return nil, nil, nil, "", fmt.Errorf("AmneziaWG: %w", err)
 		}
 		br = t
 		opts.BridgePort = t.Port()
 		a.log.Printf("%s: туннель к %s, локальный мост 127.0.0.1:%d", srv.Protocol, endpoint, t.Port())
 	}
-	fail := func(inst *xray.Instance, err error) (*xray.Instance, bridge, string, error) {
+	fail := func(inst *xray.Instance, err error) (*xray.Instance, bridge, tunSession, string, error) {
 		if inst != nil {
 			_ = inst.Close()
 		}
 		if br != nil {
 			br.Close()
 		}
-		return nil, nil, "", err
+		return nil, nil, nil, "", err
 	}
 
 	cfg, err := xray.BuildConfig(srv, opts)
@@ -940,25 +964,26 @@ func (a *App) start(srv *profile.Server, settings store.Settings) (*xray.Instanc
 		return fail(nil, err)
 	}
 
-	if opts.TUN {
-		if err := tun.Configure(settings.DNS, a.log.Printf); err != nil {
+	if settings.Mode == "tun" {
+		sess, err := a.activateTUN(serverIP, settings)
+		if err != nil {
 			return fail(inst, err)
 		}
-		return inst, br, opts.Interface, nil
+		return inst, br, sess, opts.Interface, nil
 	}
 
 	if err := a.enableSystemProxy(settings.HTTPPort); err != nil {
 		return fail(inst, fmt.Errorf("не удалось включить системный прокси: %w", err))
 	}
-	return inst, br, "", nil
+	return inst, br, nil, "", nil
 }
 
 func (a *App) Disconnect() error {
 	a.opMu.Lock()
 	defer a.opMu.Unlock()
 	a.mu.Lock()
-	inst, bridge, stop, mode := a.inst, a.bridge, a.stopStats, a.status.Mode
-	a.inst, a.bridge = nil, nil
+	inst, bridge, sess, stop, mode := a.inst, a.bridge, a.tunSess, a.stopStats, a.status.Mode
+	a.inst, a.bridge, a.tunSess = nil, nil, nil
 	a.mu.Unlock()
 	if inst == nil {
 		return nil
@@ -976,6 +1001,9 @@ func (a *App) Disconnect() error {
 	close(stop)
 	if mode == "proxy" {
 		step("возврат системного прокси", a.restoreSystemProxy)
+	}
+	if sess != nil {
+		step("остановка режима «Весь трафик»", sess.Close)
 	}
 	var err error
 	step("остановка xray", func() { err = inst.Close() })
@@ -1038,8 +1066,11 @@ func (a *App) statsLoop(inst *xray.Instance, stop chan struct{}) {
 			runtime.EventsEmit(a.ctx, "traffic", map[string]int64{"up": 0, "down": 0})
 			return
 		case <-t.C:
+			// Always read: the counters accumulate until reset.
 			up, down := inst.Traffic()
-			runtime.EventsEmit(a.ctx, "traffic", map[string]int64{"up": up, "down": down})
+			if a.visible.Load() {
+				runtime.EventsEmit(a.ctx, "traffic", map[string]int64{"up": up, "down": down})
+			}
 		}
 	}
 }
@@ -1162,8 +1193,12 @@ func (a *App) GetLogs() string {
 }
 
 func (a *App) OpenDataDir() {
-	_ = exec.Command("explorer", a.store.Dir()).Start()
+	_ = openFolder(a.store.Dir())
 }
+
+// GetPlatform returns the operating system ("windows", "darwin", "linux"),
+// for platform-specific wording in the UI.
+func (a *App) GetPlatform() string { return goruntime.GOOS }
 
 func tail(path string, n int) string {
 	b, err := os.ReadFile(path)

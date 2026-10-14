@@ -99,8 +99,10 @@ p { margin: 0; }
   padding: 22px 24px 18px;
   background: var(--dock);
   border-right: 1px solid var(--line);
+  overflow-y: auto;
   transition: background-color .45s ease, color .45s ease;
 }
+.dock::-webkit-scrollbar { width: 0; }
 
 .brand {
   display: flex;
@@ -127,6 +129,10 @@ p { margin: 0; }
   font-size: 15px;
   font-weight: 500;
   overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .status-detail { margin-top: 4px; color: var(--muted); font-size: 13px; }
@@ -142,7 +148,7 @@ p { margin: 0; }
 .meters dt { color: var(--muted); font-size: 12px; }
 .meters dd { margin: 2px 0 0; font-size: 17px; font-weight: 550; font-variant-numeric: tabular-nums; }
 
-.dock-actions { margin-top: auto; display: flex; flex-direction: column; gap: 12px; }
+.dock-actions { margin-top: auto; padding-top: 20px; display: flex; flex-direction: column; gap: 12px; }
 
 .mode {
   display: grid;
@@ -257,7 +263,7 @@ main {
 .view { display: none; flex: 1; min-height: 0; flex-direction: column; padding-top: 16px; }
 .view.active { display: flex; }
 
-.bar { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 10px; }
 
 .btn {
   height: 34px;
@@ -274,10 +280,12 @@ main {
 .btn.ghost:hover { color: var(--ink); background: var(--hover); }
 .btn:disabled { opacity: .5; cursor: default; }
 .btn.small { height: 28px; padding: 0 10px; font-size: 13px; }
+.btn.icon { width: 34px; padding: 0; display: grid; place-items: center; }
+.btn.icon svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 
 .search {
-  flex: 1;
-  min-width: 120px;
+  flex: 1 1 140px;
+  min-width: 140px;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -320,7 +328,10 @@ textarea { height: auto; padding: 10px; resize: vertical; font: 12.5px/1.5 var(-
   gap: 10px;
   padding: 18px 12px 6px;
   font-weight: 600;
+  white-space: nowrap;
 }
+.group span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.group small { flex: none; }
 .group:first-child { padding-top: 4px; }
 .group small { color: var(--muted); font-weight: 400; font-size: 13px; }
 
@@ -350,13 +361,25 @@ textarea { height: auto; padding: 10px; resize: vertical; font: 12.5px/1.5 var(-
 .row-meta { color: var(--muted); font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .row-meta .proto { color: var(--ink); opacity: .75; margin-right: 8px; }
 
-.ping { width: 70px; text-align: right; font-size: 13px; font-variant-numeric: tabular-nums; color: var(--muted); }
+.ping { flex: none; min-width: 44px; text-align: right; font-size: 13px; font-variant-numeric: tabular-nums; color: var(--muted); }
 .ping.good { color: var(--lagoon); }
 .ping.mid { color: var(--amber); }
 .ping.bad { color: var(--danger); }
 
-.row-actions { display: flex; gap: 2px; opacity: 0; }
-.row:hover .row-actions, .row:focus-within .row-actions { opacity: 1; }
+/* Row actions float over the ping on hover, so they never take space
+   from the server name. */
+.row-actions {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: none;
+  gap: 2px;
+  padding-left: 16px;
+  background: linear-gradient(to right, transparent, var(--hover) 16px);
+}
+.row.selected .row-actions { background: linear-gradient(to right, transparent, var(--lagoon-soft) 16px); }
+.row:hover .row-actions, .row:focus-within .row-actions { display: flex; }
 
 .empty { margin: auto; max-width: 340px; text-align: center; color: var(--muted); padding: 40px 0; }
 .empty b { display: block; color: var(--ink); font-size: 16px; font-weight: 600; margin-bottom: 6px; }
@@ -365,11 +388,12 @@ textarea { height: auto; padding: 10px; resize: vertical; font: 12.5px/1.5 var(-
 
 .sub { padding: 18px 12px; border-bottom: 1px solid var(--line); display: flex; flex-direction: column; gap: 10px; }
 .sub:first-child { padding-top: 4px; }
-.sub-head { display: flex; align-items: flex-start; gap: 12px; }
-.sub-head > div:first-child { flex: 1; min-width: 0; }
+.sub-head { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 4px 12px; }
+.sub-head > div:first-child { flex: 1 1 200px; min-width: 0; }
 .sub-title { font-size: 17px; font-weight: 600; letter-spacing: -.01em; }
 .sub-url { color: var(--muted); font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; user-select: text; }
-.sub-actions { display: flex; gap: 0; flex: none; margin-right: -10px; }
+.sub-actions { display: flex; flex-wrap: wrap; gap: 0; margin: 0 -10px; }
+.sub-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .announce {
   padding: 2px 0 2px 12px;
@@ -469,6 +493,24 @@ dialog h2 { margin: 0; font-size: 18px; font-weight: 650; letter-spacing: -.01em
   user-select: text;
 }
 .toast.error { background: var(--danger); color: #fff; }
+
+/* ---------- small windows ---------- */
+
+@media (max-width: 900px) {
+  .dock { width: 250px; padding: 18px 18px 16px; }
+  main { padding: 12px 18px 16px; }
+  .status-word { font-size: 28px; }
+  .tabs { gap: 16px; }
+}
+
+@media (max-height: 620px) {
+  .status { margin-top: 22px; }
+  .status-word { font-size: 28px; }
+  .meters { margin-top: 16px; }
+  .dock-actions { gap: 8px; padding-top: 14px; }
+  .toggle { height: 44px; }
+  .dock-foot { margin-top: 10px; }
+}
 
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; }

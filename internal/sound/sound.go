@@ -6,10 +6,6 @@ import (
 	"encoding/binary"
 	"math"
 	"math/rand"
-	"sync"
-	"unsafe"
-
-	"golang.org/x/sys/windows"
 )
 
 const sampleRate = 44100
@@ -114,24 +110,4 @@ func Fart() []byte {
 		w(int16(math.Round(v * gain * 32767)))
 	}
 	return b.Bytes()
-}
-
-var (
-	winmm     = windows.NewLazySystemDLL("winmm.dll")
-	playSound = winmm.NewProc("PlaySoundW")
-
-	once sync.Once
-	wav  []byte // must stay alive while PlaySound plays it asynchronously
-)
-
-const (
-	sndAsync     = 0x0001
-	sndNoDefault = 0x0002
-	sndMemory    = 0x0004
-)
-
-// PlayConnected plays the connection sound without blocking.
-func PlayConnected() {
-	once.Do(func() { wav = Fart() })
-	_, _, _ = playSound.Call(uintptr(unsafe.Pointer(&wav[0])), 0, sndMemory|sndAsync|sndNoDefault)
 }

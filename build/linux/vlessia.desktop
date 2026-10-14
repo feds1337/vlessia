@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Vlessia
+GenericName=VPN
+Comment=VPN-клиент на базе Xray-core
+Exec=vlessia
+Icon=vlessia
+Terminal=false
+Categories=Network;
+StartupWMClass=vlessia

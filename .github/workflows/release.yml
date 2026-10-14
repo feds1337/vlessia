@@ -1,6 +1,7 @@
 name: Release
 
-# Push a tag like v0.2.0 to build the installer and publish a GitHub release.
+# Push a tag like v0.3.0 to build Windows, macOS and Linux packages and
+# publish a GitHub release.
 on:
   push:
     tags: ["v*"]
@@ -13,7 +14,6 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
@@ -39,22 +39,134 @@ jobs:
       - name: Build
         run: wails build -clean -trimpath -ldflags "-s -w -X main.version=${{ github.ref_name }}" -nsis
 
-      - name: Name artifacts
+      - name: Package
         shell: pwsh
         run: |
           $v = "${{ github.ref_name }}"
-          Move-Item build/bin/Vlessia-amd64-installer.exe "build/bin/Vlessia-$v-setup.exe"
-          Move-Item build/bin/Vlessia.exe "build/bin/Vlessia-$v-portable.exe"
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Move-Item build/bin/Vlessia-amd64-installer.exe "dist/Vlessia-$v-setup.exe"
+          Move-Item build/bin/Vlessia.exe "dist/Vlessia-$v-portable.exe"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: dist/*
+
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Install Wails
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.16.0
+
+      - name: Test
+        run: go test ./internal/...
+
+      - name: Set version from tag
+        shell: pwsh
+        run: |
+          $v = "${{ github.ref_name }}".TrimStart("v") -replace "-.*", ""
+          $j = Get-Content wails.json -Raw | ConvertFrom-Json
+          $j.info.productVersion = $v
+          $j | ConvertTo-Json -Depth 10 | Set-Content wails.json -Encoding utf8
+
+      - name: Build (Intel + Apple Silicon)
+        run: wails build -clean -trimpath -platform darwin/universal -ldflags "-s -w -X main.version=${{ github.ref_name }}"
+
+      - name: Package
+        run: |
+          # Not notarized: an ad-hoc signature is still required to run on
+          # Apple Silicon.
+          codesign --force --deep --sign - build/bin/Vlessia.app
+          mkdir -p dist
+          hdiutil create -volname Vlessia -srcfolder build/bin/Vlessia.app -ov -format UDZO \
+            "dist/Vlessia-${{ github.ref_name }}-macos-universal.dmg"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos
+          path: dist/*
+
+  linux:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev pkg-config
+
+      - name: Install Wails
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.16.0
+
+      - name: Test
+        run: go test -tags webkit2_41 ./internal/...
+
+      - name: Build
+        run: wails build -clean -trimpath -tags webkit2_41 -ldflags "-s -w -X main.version=${{ github.ref_name }}"
+
+      - name: Package
+        run: |
+          v="${{ github.ref_name }}"
+          ver="${v#v}"
+          mkdir -p dist
+
+          # .deb
+          root=pkg
+          install -Dm755 build/bin/Vlessia "$root/usr/bin/vlessia"
+          install -Dm644 build/linux/vlessia.desktop "$root/usr/share/applications/vlessia.desktop"
+          install -Dm644 build/appicon.png "$root/usr/share/icons/hicolor/512x512/apps/vlessia.png"
+          install -Dm644 LICENSE "$root/usr/share/doc/vlessia/copyright"
+          mkdir -p "$root/DEBIAN"
+          cat > "$root/DEBIAN/control" <<EOF
+          Package: vlessia
+          Version: ${ver}
+          Architecture: amd64
+          Maintainer: feds1337 <166226509+feds1337@users.noreply.github.com>
+          Depends: libgtk-3-0t64 | libgtk-3-0, libwebkit2gtk-4.1-0, pkexec | policykit-1
+          Section: net
+          Priority: optional
+          Homepage: https://github.com/feds1337/vlessia
+          Description: VPN client based on Xray-core
+           VLESS, VMess, Trojan, Shadowsocks, Hysteria 2, WireGuard, AmneziaWG and
+           OpenVPN client with a system proxy mode and a full-tunnel (TUN) mode.
+          EOF
+          dpkg-deb --build --root-owner-group "$root" "dist/vlessia_${ver}_amd64.deb"
+
+          # .tar.gz
+          mkdir -p "vlessia-$v-linux-amd64"
+          cp build/bin/Vlessia "vlessia-$v-linux-amd64/vlessia"
+          cp build/linux/vlessia.desktop build/appicon.png LICENSE "vlessia-$v-linux-amd64/"
+          tar -czf "dist/vlessia-$v-linux-amd64.tar.gz" "vlessia-$v-linux-amd64"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux
+          path: dist/*
+
+  publish:
+    needs: [windows, macos, linux]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
 
       - name: Checksums
-        shell: bash
         # The in-app updater verifies the installer against this file.
-        run: cd build/bin && sha256sum *.exe > SHA256SUMS.txt && cat SHA256SUMS.txt
+        run: cd dist && sha256sum * > SHA256SUMS.txt && cat SHA256SUMS.txt
 
       - uses: softprops/action-gh-release@v2
         with:
-          files: |
-            build/bin/*.exe
-            build/bin/SHA256SUMS.txt
+          files: dist/*
           generate_release_notes: true
           prerelease: ${{ contains(github.ref_name, '-') }}

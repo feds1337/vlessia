@@ -144,7 +144,7 @@ func wgKeypair() (priv, pub []byte) {
 	return priv, pub
 }
 
-func freeUDPPort(t *testing.T) int {
+func freeUDPPort(t testing.TB) int {
 	c, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
 	if err != nil {
 		t.Fatal(err)
@@ -174,7 +174,15 @@ var awgParams = []profile.Param{
 	{Key: "RandomTrailers", Value: "on"}, {Key: "DisableCookies", Value: "on"},
 }
 
-func startAWGServer(t *testing.T, serverPriv, clientPub []byte, port int) func() {
+func startAWGServer(t testing.TB, serverPriv, clientPub []byte, port int) func() {
+	return startAWGServerWith(t, serverPriv, clientPub, port,
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { fmt.Fprint(w, "hello from awg") }))
+}
+
+// startAWGServerWith runs an AmneziaWG server on its own netstack that
+// serves web on 198.18.0.1:80, plus a UDP echo on :7 and a TCP port (:81)
+// that accepts and never answers.
+func startAWGServerWith(t testing.TB, serverPriv, clientPub []byte, port int, web http.Handler) func() {
 	tdev, tnet, err := netstack.CreateNetTUN([]netip.Addr{netip.MustParseAddr("198.18.0.1")}, nil, 1280)
 	if err != nil {
 		t.Fatal(err)
@@ -213,7 +221,7 @@ func startAWGServer(t *testing.T, serverPriv, clientPub []byte, port int) func()
 	if err != nil {
 		t.Fatal(err)
 	}
-	go http.Serve(ln, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { fmt.Fprint(w, "hello from awg") }))
+	go http.Serve(ln, web)
 	// A peer that accepts and never hangs up, for the shutdown test.
 	hold, err := tnet.ListenTCP(&net.TCPAddr{IP: net.ParseIP("198.18.0.1"), Port: 81})
 	if err != nil {

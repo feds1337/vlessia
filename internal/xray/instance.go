@@ -8,9 +8,6 @@ import (
 	"github.com/xtls/xray-core/core"
 	"github.com/xtls/xray-core/features/stats"
 	"github.com/xtls/xray-core/infra/conf/serial"
-
-	// Registers all Xray-core features (protocols, transports, tun, ...).
-	_ "github.com/xtls/xray-core/main/distro/all"
 )
 
 // Instance is a running Xray-core.

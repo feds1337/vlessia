@@ -12,6 +12,7 @@ import (
 	"net"
 	"net/netip"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -36,6 +37,45 @@ type Server struct {
 	mu     sync.Mutex
 	conns  map[io.Closer]struct{}
 	closed bool
+
+	logMu      sync.Mutex
+	logWindow  time.Time
+	logged     int
+	suppressed int
+}
+
+// Errors per window that are written to the log; the rest are counted. A
+// browser opening a blocked page can produce hundreds of failed dials.
+const (
+	logBurst  = 5
+	logWindow = 10 * time.Second
+)
+
+// logError writes a connection error to the log, rate-limited. Expected
+// failures are skipped: EOF, and "network is unreachable" for IPv6
+// destinations when the tunnel has no IPv6 address.
+func (s *Server) logError(err error) {
+	if errors.Is(err, io.EOF) || errors.Is(err, context.Canceled) || strings.Contains(err.Error(), "network is unreachable") {
+		return
+	}
+	s.logMu.Lock()
+	now := time.Now()
+	if now.Sub(s.logWindow) >= logWindow {
+		if s.suppressed > 0 {
+			s.logf("socks: ещё %d ошибок соединения не записано", s.suppressed)
+		}
+		s.logWindow, s.logged, s.suppressed = now, 0, 0
+	}
+	write := s.logged < logBurst
+	if write {
+		s.logged++
+	} else {
+		s.suppressed++
+	}
+	s.logMu.Unlock()
+	if write {
+		s.logf("socks: %v", err)
+	}
 }
 
 // Listen starts a server on a random loopback port.
@@ -80,8 +120,8 @@ func (s *Server) serve() {
 			defer s.wg.Done()
 			defer s.track(c, false)
 			defer c.Close()
-			if err := s.handle(c); err != nil && !errors.Is(err, io.EOF) {
-				s.logf("socks: %v", err)
+			if err := s.handle(c); err != nil {
+				s.logError(err)
 			}
 		}()
 	}

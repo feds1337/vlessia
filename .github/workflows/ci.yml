@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            tags: ""
+          - os: ubuntu-24.04
+            tags: webkit2_41
+          - os: macos-latest
+            tags: ""
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Linux build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev pkg-config
+
+      - name: Install Wails
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.16.0
+
+      - name: Vet
+        run: go vet -tags "${{ matrix.tags }}" ./...
+
+      - name: Test
+        shell: bash
+        run: E2E=1 go test -tags "${{ matrix.tags }}" ./internal/...
+
+      - name: Build
+        shell: bash
+        run: |
+          platform=""
+          if [ "$RUNNER_OS" = "macOS" ]; then platform="-platform darwin/universal"; fi
+          wails build -trimpath -tags "${{ matrix.tags }}" $platform -ldflags "-s -w -X main.version=ci"
+          ls -la build/bin

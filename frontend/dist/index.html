@@ -60,10 +60,14 @@
           <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/></svg>
           <input id="search" placeholder="Найти сервер" aria-label="Найти сервер">
         </label>
-        <button class="btn ghost" id="ping-btn">Пинг</button>
-        <button class="btn ghost" id="update-subs-btn" title="Обновить все подписки">Обновить</button>
+        <button class="btn ghost icon" id="ping-btn" title="Проверить пинг серверов" aria-label="Проверить пинг серверов">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 18v-2M9 18v-6M14 18V9M19 18V5"/></svg>
+        </button>
+        <button class="btn ghost icon" id="update-subs-btn" title="Обновить все подписки" aria-label="Обновить все подписки">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 0 0-14.3-4.9L4 8M4 4v4h4M4 13a8 8 0 0 0 14.3 4.9L20 16M20 20v-4h-4"/></svg>
+        </button>
         <button class="btn" id="add-btn">Добавить</button>
-        <button class="btn primary" id="paste-btn">Вставить из буфера</button>
+        <button class="btn primary" id="paste-btn" title="Добавить ссылку или подписку из буфера обмена">Вставить</button>
       </div>
       <div class="list" id="server-list"></div>
     </section>

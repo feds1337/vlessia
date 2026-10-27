@@ -12,7 +12,7 @@ gomobile bind \
   -androidapi 24 \
   -javapkg io.github.feds1337.vlessia \
   -trimpath \
-  -ldflags="-s -w -buildid=" \
+  -ldflags="-s -w -buildid= -checklinkname=0" \
   -o android/app/libs/vlessia.aar \
   ./mobile
 rm -f android/app/libs/vlessia-sources.jar

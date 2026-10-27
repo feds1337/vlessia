@@ -66,9 +66,12 @@ func BuildConfig(s *profile.Server, o Options) ([]byte, error) {
 		},
 	}
 	if o.TUN {
+		// Always pass a non-empty name: Xray 26.10.21+ otherwise calls
+		// net.Interfaces() to pick one, which Android blocks via SELinux
+		// ("route ip+net: netlinkrib: permission denied").
 		inbounds = append(inbounds, obj{
 			"tag": TagTun, "port": 0, "protocol": "tun",
-			"settings": obj{"name": o.TunName, "MTU": 1500},
+			"settings": obj{"name": nonEmpty(o.TunName, "tun0"), "MTU": 1500},
 			"sniffing": sniffing,
 		})
 	}

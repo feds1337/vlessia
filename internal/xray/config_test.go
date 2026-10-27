@@ -38,7 +38,13 @@ func TestParseAndBuild(t *testing.T) {
 		for _, tunMode := range []bool{false, true} {
 			o := Options{SocksPort: 10808, HTTPPort: 10809, BypassRU: true}
 			if tunMode {
-				o.TUN, o.TunName, o.Interface, o.ServerAddress = true, "Vlessia", "Ethernet", "9.9.9.9"
+				// Leave TunName empty on the first link to verify the default
+				// ("tun0") is filled in and Xray does not call net.Interfaces()
+				// (which fails on Android with netlinkrib: permission denied).
+				o.TUN, o.Interface, o.ServerAddress = true, "Ethernet", "9.9.9.9"
+				if link != links[0] {
+					o.TunName = "Vlessia"
+				}
 				if s.Security == "none" && s.Protocol == "vless" {
 					o.ServerAddress = "10.0.0.1"
 				}

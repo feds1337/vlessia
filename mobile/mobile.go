@@ -488,6 +488,7 @@ func (a *client) Connect() error {
 	eng, err := core.StartEngine(a.lib, srv, settings, a.store.Dir(), core.Hooks{
 		PrepareTUN: func(serverIP string, opts *xray.Options) error {
 			opts.TUN = true
+			opts.TunName = "tun0"
 			opts.ServerAddress = serverIP
 			return nil
 		},

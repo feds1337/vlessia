@@ -11,7 +11,6 @@ import android.content.ClipboardManager
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageInstaller
 import android.media.MediaPlayer
 import android.net.Uri
 import android.net.VpnService
@@ -69,10 +68,6 @@ object Core : Host {
     /** Pending APK path waiting for install permission or foreground resume. */
     @Volatile
     var pendingInstallPath: String? = null
-
-    /** Pending PackageInstaller confirmation intent waiting for foreground resume. */
-    @Volatile
-    var pendingConfirmIntent: Intent? = null
 
     @Volatile
     private var askedInstallPermission = false
@@ -151,9 +146,9 @@ object Core : Host {
 
     override fun installPackage(path: String) {
         askedInstallPermission = false
-        executor.execute {
+        main.post {
             val file = File(path)
-            if (!file.exists()) return@execute
+            if (!file.exists()) return@post
 
             if (state == "connected" || state == "connecting") {
                 runCatching {
@@ -166,83 +161,31 @@ object Core : Host {
 
             if (Build.VERSION.SDK_INT >= 26 && !context.packageManager.canRequestPackageInstalls()) {
                 pendingInstallPath = path
-                main.post {
-                    if (foreground) {
-                        askedInstallPermission = true
-                        requestInstallPermission()
-                    } else {
-                        notifyUpdateReady()
-                    }
+                if (foreground) {
+                    askedInstallPermission = true
+                    requestInstallPermission()
+                } else {
+                    notifyUpdateReady()
                 }
-                return@execute
+                return@post
             }
 
-            pendingInstallPath = null
-            if (!commitSessionInstall(file)) {
-                main.post { launchSystemInstaller(file.path) }
+            if (foreground) {
+                pendingInstallPath = null
+                launchSystemInstaller(file)
+            } else {
+                pendingInstallPath = path
+                notifyUpdateReady()
             }
         }
     }
 
-    /**
-     * Streams [file] into a [PackageInstaller] session. On Android 12+ (API 31+)
-     * with USER_ACTION_NOT_REQUIRED, self-updates install silently without a
-     * prompt when Vlessia is already the installer of record; otherwise
-     * [UpdateReceiver] receives STATUS_PENDING_USER_ACTION and opens the
-     * system confirmation sheet.
-     */
-    private fun commitSessionInstall(file: File): Boolean {
-        return try {
-            val pi = context.packageManager.packageInstaller
-            val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL).apply {
-                setAppPackageName(context.packageName)
-                setSize(file.length())
-                if (Build.VERSION.SDK_INT >= 31) {
-                    setRequireUserAction(PackageInstaller.SessionParams.USER_ACTION_NOT_REQUIRED)
-                }
-            }
-            val sessionId = pi.createSession(params)
-            pi.openSession(sessionId).use { session ->
-                file.inputStream().use { input ->
-                    session.openWrite("base.apk", 0, file.length()).use { out ->
-                        input.copyTo(out)
-                        session.fsync(out)
-                    }
-                }
-                val intent = Intent(context, UpdateReceiver::class.java)
-                    .setAction(UpdateReceiver.ACTION_INSTALL_STATUS)
-                    .setPackage(context.packageName)
-                    .putExtra(UpdateReceiver.EXTRA_APK_PATH, file.path)
-                val flags = PendingIntent.FLAG_UPDATE_CURRENT or
-                    (if (Build.VERSION.SDK_INT >= 31) PendingIntent.FLAG_MUTABLE else 0)
-                val pending = PendingIntent.getBroadcast(context, sessionId, intent, flags)
-                session.commit(pending.intentSender)
-            }
-            true
-        } catch (e: Exception) {
-            Log.w(TAG, "session install fallback", e)
-            false
-        }
-    }
-
-    fun launchSystemInstaller(path: String) {
-        val file = File(path)
-        if (!file.exists()) return
-        if (Build.VERSION.SDK_INT >= 26 && !context.packageManager.canRequestPackageInstalls()) {
-            pendingInstallPath = path
-            if (foreground) requestInstallPermission() else notifyUpdateReady()
-            return
-        }
+    private fun launchSystemInstaller(file: File) {
         val uri = FileProvider.getUriForFile(context, context.packageName + ".files", file)
         val viewIntent = Intent(Intent.ACTION_VIEW)
             .setDataAndType(uri, "application/vnd.android.package-archive")
             .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
-        if (foreground) {
-            runCatching { context.startActivity(viewIntent) }
-        } else {
-            pendingInstallPath = path
-            notifyUpdateReady()
-        }
+        runCatching { context.startActivity(viewIntent) }
     }
 
     private fun requestInstallPermission() {
@@ -265,23 +208,15 @@ object Core : Host {
         val nm = context.getSystemService(NotificationManager::class.java)
         nm?.cancel(UPDATE_NOTIFICATION_ID)
 
-        val confirm = pendingConfirmIntent
-        if (confirm != null) {
-            pendingConfirmIntent = null
-            runCatching {
-                context.startActivity(confirm.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-                return
-            }
-        }
-
         val path = pendingInstallPath ?: return
-        if (!File(path).exists()) {
+        val file = File(path)
+        if (!file.exists()) {
             pendingInstallPath = null
             return
         }
         if (Build.VERSION.SDK_INT < 26 || context.packageManager.canRequestPackageInstalls()) {
             pendingInstallPath = null
-            installPackage(path)
+            launchSystemInstaller(file)
         } else if (!askedInstallPermission) {
             askedInstallPermission = true
             requestInstallPermission()
@@ -331,68 +266,15 @@ object Core : Host {
 }
 
 /**
- * Handles [PackageInstaller] session commit callbacks and cleans up after
- * the package is replaced.
+ * Cleans up downloaded APK files after the package is replaced.
  */
 class UpdateReceiver : BroadcastReceiver() {
-    companion object {
-        const val ACTION_INSTALL_STATUS = "io.github.feds1337.vlessia.INSTALL_STATUS"
-        const val EXTRA_APK_PATH = "apk_path"
-    }
-
     override fun onReceive(context: Context, intent: Intent) {
-        when (intent.action) {
-            ACTION_INSTALL_STATUS -> {
-                val status = intent.getIntExtra(PackageInstaller.EXTRA_STATUS, PackageInstaller.STATUS_FAILURE)
-                val apkPath = intent.getStringExtra(EXTRA_APK_PATH)
-                when (status) {
-                    PackageInstaller.STATUS_PENDING_USER_ACTION -> {
-                        val confirm = if (Build.VERSION.SDK_INT >= 33) {
-                            intent.getParcelableExtra(Intent.EXTRA_INTENT, Intent::class.java)
-                        } else {
-                            @Suppress("DEPRECATION")
-                            intent.getParcelableExtra(Intent.EXTRA_INTENT)
-                        }
-                        if (confirm != null) {
-                            if (Core.foreground) {
-                                runCatching {
-                                    context.startActivity(confirm.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-                                }.onFailure {
-                                    Core.pendingConfirmIntent = confirm
-                                    Core.pendingInstallPath = apkPath
-                                    Core.notifyUpdateReady()
-                                }
-                            } else {
-                                Core.pendingConfirmIntent = confirm
-                                Core.pendingInstallPath = apkPath
-                                Core.notifyUpdateReady()
-                            }
-                        } else if (!apkPath.isNullOrEmpty()) {
-                            Core.launchSystemInstaller(apkPath)
-                        }
-                    }
-                    PackageInstaller.STATUS_SUCCESS -> {
-                        if (!apkPath.isNullOrEmpty()) {
-                            File(apkPath).delete()
-                        }
-                    }
-                    PackageInstaller.STATUS_FAILURE_ABORTED -> {
-                        // User cancelled the install dialog; don't force-reopen.
-                        File(context.filesDir, "data/updates/reconnect").delete()
-                    }
-                    else -> {
-                        if (!apkPath.isNullOrEmpty()) {
-                            Core.launchSystemInstaller(apkPath)
-                        }
-                    }
-                }
-            }
-            Intent.ACTION_MY_PACKAGE_REPLACED -> {
-                val dir = File(context.filesDir, "data/updates")
-                dir.listFiles()?.forEach { f ->
-                    if (f.name.endsWith(".apk") || f.name.endsWith(".part")) {
-                        f.delete()
-                    }
+        if (intent.action == Intent.ACTION_MY_PACKAGE_REPLACED) {
+            val dir = File(context.filesDir, "data/updates")
+            dir.listFiles()?.forEach { f ->
+                if (f.name.endsWith(".apk") || f.name.endsWith(".part")) {
+                    f.delete()
                 }
             }
         }

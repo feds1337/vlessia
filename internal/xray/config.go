@@ -77,10 +77,11 @@ func BuildConfig(s *profile.Server, o Options) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	direct := obj{"tag": TagDirect, "protocol": "freedom", "settings": obj{"domainStrategy": "UseIP"}}
+	directSockopt := obj{"domainStrategy": "UseIP"}
 	if o.Interface != "" {
-		direct["streamSettings"] = obj{"sockopt": obj{"interface": o.Interface}}
+		directSockopt["interface"] = o.Interface
 	}
+	direct := obj{"tag": TagDirect, "protocol": "freedom", "streamSettings": obj{"sockopt": directSockopt}}
 	outbounds := []obj{
 		proxy,
 		direct,

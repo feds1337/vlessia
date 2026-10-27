@@ -19,7 +19,7 @@ func TestStartEveryProtocol(t *testing.T) {
 		"socks5://u:p@1.2.3.4:1080#socks",
 		"https://u:p@1.2.3.4:443#https-proxy",
 		"vless://b831381d-6324-4d53-ad4f-8cda48b30811@1.2.3.4:443?type=httpupgrade&security=tls&sni=a.com#httpupgrade",
-		"vless://b831381d-6324-4d53-ad4f-8cda48b30811@1.2.3.4:80?type=tcp&headerType=http&host=a.com#tcp-http-header",
+		"vless://b831381d-6324-4d53-ad4f-8cda48b30811@10.0.0.1:80?type=tcp&headerType=http&host=a.com#tcp-http-header",
 	)
 	for i, link := range all {
 		s, err := profile.ParseLink(link)

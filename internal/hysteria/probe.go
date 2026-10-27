@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/apernet/quic-go"
+	xnet "github.com/xtls/xray-core/common/net"
 	"github.com/xtls/xray-core/transport/internet/finalmask"
 	"github.com/xtls/xray-core/transport/internet/finalmask/salamander"
 
@@ -43,17 +44,22 @@ func Probe(ctx context.Context, s *profile.Server, ip string, control func(strin
 	}
 	defer udp.Close()
 
-	var pc net.PacketConn = udp
-	if s.Obfs == "salamander" {
-		m := finalmask.NewUdpmaskManager([]finalmask.Udpmask{&salamander.Config{Password: s.ObfsPassword}})
-		if pc, err = m.WrapPacketConnClient(udp); err != nil {
-			return Result{}, err
-		}
-	}
-
 	addr, err := net.ResolveUDPAddr("udp", net.JoinHostPort(ip, strconv.Itoa(s.Port)))
 	if err != nil {
 		return Result{}, err
+	}
+
+	var pc net.PacketConn = udp
+	if s.Obfs == "salamander" {
+		fm := finalmask.NewFinalMask(nil, []finalmask.UDPMask{&salamander.Config{Password: s.ObfsPassword}}, nil, nil,
+			func(context.Context, xnet.Destination) (xnet.PacketConn, xnet.Addr, error) {
+				return udp, addr, nil
+			}, nil)
+		conn, err := fm.DialUDP(ctx, xnet.Destination{})
+		if err != nil {
+			return Result{}, err
+		}
+		pc = conn.(*xnet.PacketConnWrapper).PacketConn
 	}
 	sni := s.SNI
 	if sni == "" && net.ParseIP(s.Address) == nil {

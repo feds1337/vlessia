@@ -25,9 +25,9 @@ func TestHysteriaResetLayout(t *testing.T) {
 	hc := &http.Client{Transport: &http.Transport{Proxy: http.ProxyURL(proxy)}, Timeout: 3 * time.Second}
 	_, _ = hc.Get("http://example.com/") // fails, but creates the cached client
 
-	hyManager.mutex.Lock()
+	hyManager.RLock()
 	n := len(hyManager.m)
-	hyManager.mutex.Unlock()
+	hyManager.RUnlock()
 	if n != 1 {
 		t.Fatalf("expected 1 cached Hysteria client, got %d (xray internals changed?)", n)
 	}

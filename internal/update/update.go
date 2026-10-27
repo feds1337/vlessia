@@ -31,6 +31,12 @@ type Release struct {
 	setupName string
 	size      int64
 	sumsURL   string
+	apks      []asset // Android packages
+}
+
+type asset struct {
+	name, url string
+	size      int64
 }
 
 // Latest fetches the latest non-prerelease release.
@@ -67,6 +73,8 @@ func Latest(ctx context.Context, client *http.Client) (*Release, error) {
 		switch {
 		case strings.HasSuffix(strings.ToLower(a.Name), "-setup.exe"):
 			rel.setupURL, rel.setupName, rel.size = a.URL, a.Name, a.Size
+		case strings.HasSuffix(strings.ToLower(a.Name), ".apk"):
+			rel.apks = append(rel.apks, asset{a.Name, a.URL, a.Size})
 		case a.Name == "SHA256SUMS.txt":
 			rel.sumsURL = a.URL
 		}
@@ -110,6 +118,27 @@ func parse(v string) ([3]int, bool) {
 	return out, true
 }
 
+// ForAndroid returns the release with the Android package for abi (e.g.
+// "arm64-v8a", from Build.SUPPORTED_ABIS) as its installer, falling back to
+// the universal package. The result cannot install if there is neither.
+func (r *Release) ForAndroid(abi string) *Release {
+	c := *r
+	c.setupURL, c.setupName, c.size = "", "", 0
+	var wants []string
+	if abi != "" {
+		wants = append(wants, "-"+abi+".apk")
+	}
+	for _, want := range append(wants, "-universal.apk") {
+		for _, a := range r.apks {
+			if strings.HasSuffix(strings.ToLower(a.name), strings.ToLower(want)) {
+				c.setupURL, c.setupName, c.size = a.url, a.name, a.size
+				return &c
+			}
+		}
+	}
+	return &c
+}
+
 // CanInstall reports whether the release has an installer to apply.
 func (r *Release) CanInstall() bool { return r.setupURL != "" }
 
@@ -134,6 +163,13 @@ func Download(ctx context.Context, client *http.Client, r *Release, dir string, 
 		return "", err
 	}
 	path := filepath.Join(dir, r.setupName)
+	if verifyFile(path, r.size, want) {
+		if progress != nil && r.size > 0 {
+			progress(r.size, r.size)
+		}
+		return path, nil
+	}
+
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, r.setupURL, nil)
 	if err != nil {
 		return "", err
@@ -147,7 +183,8 @@ func Download(ctx context.Context, client *http.Client, r *Release, dir string, 
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("загрузка: HTTP %d", resp.StatusCode)
 	}
-	f, err := os.Create(path)
+	part := path + ".part"
+	f, err := os.Create(part)
 	if err != nil {
 		return "", err
 	}
@@ -158,18 +195,45 @@ func Download(ctx context.Context, client *http.Client, r *Release, dir string, 
 		err = cerr
 	}
 	if err != nil {
-		_ = os.Remove(path)
+		_ = os.Remove(part)
 		return "", err
 	}
 	if r.size > 0 && n != r.size {
-		_ = os.Remove(path)
+		_ = os.Remove(part)
 		return "", fmt.Errorf("файл скачан не полностью (%d из %d байт)", n, r.size)
 	}
 	if want != "" && !strings.EqualFold(hex.EncodeToString(h.Sum(nil)), want) {
-		_ = os.Remove(path)
+		_ = os.Remove(part)
 		return "", errors.New("контрольная сумма установщика не совпала")
 	}
+	if err := os.Rename(part, path); err != nil {
+		_ = os.Remove(part)
+		return "", err
+	}
 	return path, nil
+}
+
+func verifyFile(path string, wantSize int64, wantSum string) bool {
+	if wantSize <= 0 && wantSum == "" {
+		return false
+	}
+	st, err := os.Stat(path)
+	if err != nil || st.IsDir() || (wantSize > 0 && st.Size() != wantSize) {
+		return false
+	}
+	if wantSum == "" {
+		return true
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return false
+	}
+	return strings.EqualFold(hex.EncodeToString(h.Sum(nil)), wantSum)
 }
 
 func fetchSums(ctx context.Context, client *http.Client, url string) (map[string]string, error) {

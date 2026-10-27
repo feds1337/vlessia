@@ -6,9 +6,10 @@ const $$ = (sel) => document.querySelectorAll(sel);
 
 let state = null;
 let upd = null;
-let platform = "windows"; // "windows" | "darwin" | "linux"
+let platform = "windows"; // "windows" | "darwin" | "linux" | "android"
 const pings = {};
 let logsTimer = null;
+let logsBusy = false;
 
 // ---------- helpers ----------
 
@@ -311,11 +312,12 @@ function liveCurve(now) {
 }
 
 function kick() {
-  if (!live.raf) live.raf = requestAnimationFrame(frame);
+  if (!live.raf && !document.hidden) live.raf = requestAnimationFrame(frame);
 }
 
 function frame(now) {
   live.raf = 0;
+  if (document.hidden) return;
   const dt = Math.min(0.1, Math.max(0, (now - (live.last || now)) / 1000));
   live.last = now;
   const k = still() ? 1 : 1 - Math.exp(-dt / 0.22);
@@ -507,6 +509,7 @@ function readSettings() {
 }
 
 function renderAutostart(st) {
+  if (platform === "android") return; // see applyAndroid
   $("#autostart").checked = st.enabled;
   const hint = $("#autostart-hint");
   hint.classList.remove("warn");
@@ -573,10 +576,16 @@ async function applyUpdate() {
 // ---------- navigation & misc ----------
 
 async function refreshLogs() {
-  const pre = $("#logs");
-  const atBottom = pre.scrollTop + pre.clientHeight >= pre.scrollHeight - 20;
-  pre.textContent = await api().GetLogs();
-  if (atBottom) pre.scrollTop = pre.scrollHeight;
+  if (logsBusy) return;
+  logsBusy = true;
+  try {
+    const pre = $("#logs");
+    const atBottom = pre.scrollTop + pre.clientHeight >= pre.scrollHeight - 20;
+    pre.textContent = await api().GetLogs();
+    if (atBottom) pre.scrollTop = pre.scrollHeight;
+  } finally {
+    logsBusy = false;
+  }
 }
 
 function toggleAuto() {
@@ -637,7 +646,7 @@ function showView(name) {
   if (name === "settings") fillSettings();
   if (name === "logs") {
     refreshLogs();
-    logsTimer = setInterval(() => $("#logs-auto").checked && refreshLogs(), 2000);
+    logsTimer = setInterval(() => !document.hidden && $("#logs-auto").checked && refreshLogs(), 2000);
   }
 }
 
@@ -933,6 +942,13 @@ function bind() {
   window.runtime.EventsOn("traffic", renderTraffic);
   window.runtime.EventsOn("notice", (text) => toast(text));
   window.addEventListener("resize", moveTabMark);
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) {
+      live.last = performance.now();
+      kick();
+      if ($("#view-logs").classList.contains("active") && $("#logs-auto").checked) refreshLogs();
+    }
+  });
   window.runtime.EventsOn("ping", (p) => {
     pings[p.id] = p.ms;
     const cell = document.querySelector(`#server-list .row[data-id="${p.id}"] .ping`);
@@ -950,9 +966,30 @@ function bind() {
 
 // Wording that differs by operating system.
 function applyPlatform() {
+  if (platform === "android") return applyAndroid();
   if (platform === "windows") return;
   const tunOption = $('#settings-form select[name="mode"] option[value="tun"]');
   tunOption.textContent = "Весь трафик — при подключении система попросит пароль администратора";
+}
+
+// Android always routes all traffic through the VPN and starts with the
+// system (always-on VPN), so the mode and autostart controls give way.
+function applyAndroid() {
+  $("#mode-seg").hidden = true;
+  $("#qr-btn").title = "Сканировать QR-код сервера или подписки";
+  $('#settings-form select[name="mode"]').closest(".row-field").hidden = true;
+  $("#autostart").closest("label").hidden = true;
+  $("#autostart-hint").textContent =
+    "Чтобы VPN включался сам после перезагрузки телефона, включите для Vlessia «Постоянный VPN» в настройках Android.";
+  const vpnSettings = document.createElement("div");
+  vpnSettings.className = "inline";
+  vpnSettings.innerHTML = `<button class="btn ghost" type="button">Открыть настройки VPN</button>`;
+  vpnSettings.firstChild.addEventListener("click", () => api().OpenVpnSettings());
+  $("#autostart-hint").after(vpnSettings);
+  $('#settings-form input[name="autoConnect"]').parentElement.lastChild.textContent =
+    " Подключаться к выбранному серверу при открытии приложения";
+  $("#open-dir").closest(".inline").hidden = true;
+  $("#dns-hint").textContent = "Через запятую. Первый также назначается VPN-подключению Android.";
 }
 
 async function init() {

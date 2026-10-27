@@ -10,7 +10,7 @@
 - **macOS:** Xcode Command Line Tools. Universal-сборка: `wails build -platform darwin/universal`.
 - **Linux:** `sudo apt install libgtk-3-dev libwebkit2gtk-4.1-dev pkg-config`, сборка с тегом `webkit2_41`: `wails build -tags webkit2_41`.
 
-CI (`.github/workflows/ci.yml`) на каждый push проверяет, тестирует и собирает клиент на всех трёх системах.
+CI (`.github/workflows/ci.yml`) на каждый push проверяет, тестирует и собирает клиент на всех трёх системах и под Android.
 
 Нужны Go 1.27+ и Wails CLI v2:
 
@@ -32,9 +32,29 @@ wails build -clean -trimpath -ldflags "-s -w -X main.version=v0.1.0" -nsis
 
 Скрипт установщика — `build/windows/installer/project.nsi` (шаблон Wails, доработан: русский язык, закрытие запущенного клиента, удаление автозапуска и возврат системного прокси при деинсталляции через `Vlessia.exe --cleanup`).
 
+### Android
+
+Нужны Android SDK (platform 35, build-tools 35), NDK 27.2, JDK 17 и gomobile той же версии, что `golang.org/x/mobile` в `go.mod`:
+
+```bash
+go install golang.org/x/mobile/cmd/gomobile@v0.0.0-20261011034528-197770444867 golang.org/x/mobile/cmd/gobind@v0.0.0-20261011034528-197770444867
+```
+
+Сначала Go-ядро собирается в `android/app/libs/vlessia.aar` (переменная `TARGETS=android/amd64` ускоряет сборку только под эмулятор), затем APK — Gradle сам копирует интерфейс из `frontend/dist`:
+
+```bash
+ANDROID_NDK_HOME=$ANDROID_HOME/ndk/27.2.12479018 bash android/build-core.sh
+```
+
+```bash
+cd android && ./gradlew assembleDebug
+```
+
+APK по архитектурам и универсальный — в `android/app/build/outputs/apk/`. Релизная сборка (`assembleRelease -PvlessiaVersion=v0.3.0`) подписывается ключом из переменных `VLESSIA_KEYSTORE`, `VLESSIA_KEYSTORE_PASSWORD`, `VLESSIA_KEY_ALIAS`, `VLESSIA_KEY_PASSWORD`; в GitHub Actions они берутся из секретов `ANDROID_KEYSTORE_BASE64` (keystore в base64), `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`. Обновление ставится поверх старой версии, только если подпись та же, — ключ нельзя терять или менять.
+
 ### Релизы
 
-Релиз собирается GitHub Actions (`.github/workflows/release.yml`) при публикации тега: тесты, сборка установщика и portable-версии, публикация на странице Releases. Тег с дефисом (`v0.2.0-beta`) публикуется как пре-релиз.
+Релиз собирается GitHub Actions (`.github/workflows/release.yml`) при публикации тега: тесты, сборка установщика, portable-версии, пакетов macOS и Linux и APK для Android, публикация на странице Releases. Тег с дефисом (`v0.2.0-beta`) публикуется как пре-релиз.
 
 ```bash
 git tag v0.2.0
@@ -55,7 +75,9 @@ go test ./internal/...
 | Путь | Назначение |
 |---|---|
 | `main.go`, `app.go` | Запуск Wails, системный прокси и TUN, методы для UI |
-| `internal/core` | Серверы и подписки, запуск подключения (`StartEngine`: резолв, мосты AWG/OpenVPN, Xray), пинг |
+| `internal/core` | Общее для десктопа и Android: серверы и подписки, запуск подключения (`StartEngine`), пинг, счётчик трафика, сторож |
+| `mobile` | Android-библиотека для gomobile: те же методы для UI, VPN-интерфейс от Android, автообновления |
+| `android/` | Android-приложение на Kotlin: WebView с интерфейсом, VpnService, плитка, PackageInstaller OTA |
 | `internal/qr` | Чтение QR-кодов из картинок и с экрана (gozxing, kbinani/screenshot) |
 | `tray.go` | Иконка и меню в трее |
 | `internal/profile` | Модель сервера, парсинг ссылок и подписок |
@@ -122,6 +144,18 @@ GUI-клиент работает от обычного пользователя
 3. Сообщает `ready`. Когда клиент закрывает соединение (отключение или падение), помощник удаляет маршруты и выходит; если завершится помощник — клиент отключается и показывает причину.
 
 Исходящие соединения клиента привязаны к физическому адаптеру (`IP_BOUND_IF` на macOS, `SO_BINDTODEVICE` на Linux, ядро 5.7+), поэтому прямой трафик не попадает обратно в туннель.
+
+### Как устроен Android
+
+Интерфейс — тот же `frontend/dist` в WebView. `android/app/src/main/assets/web/android.js` подставляет вместо рантайма Wails `window.go.main.App.*` (промисы) и `window.runtime.EventsOn`; вызовы идут в `MainActivity` и дальше в `Mobile.call(метод, JSON)`, который по имени вызывает метод `mobile.client` (через reflection — список методов совпадает с десктопным `App`). События ядра приходят через `Host.emit`.
+
+Подключение: ядро (`core.StartEngine`) резолвит сервер, поднимает мост AmneziaWG/OpenVPN, если нужно, и перед запуском Xray просит у Android VPN-интерфейс (`Host.openTun` → `VlessiaVpnService.establish`). Интерфейс получает маршруты `0.0.0.0/0` и `::/0`, а само приложение исключается из VPN (`addDisallowedApplication`), поэтому соединения Xray с серверами идут напрямую без `protect()`. Дескриптор передаётся TUN-входу Xray через переменную окружения `xray.tun.fd`. Xray этот дескриптор не закрывает, поэтому его закрывает ядро после остановки Xray — это и выключает VPN.
+
+OTA-обновления на Android (`mobile/update.go` и `Core.kt`): `updateLoop` проверяет GitHub после старта и каждые 6 часов, автоматически скачивает APK под архитектуру устройства, сверяет `SHA256SUMS.txt` и запускает сессию `PackageInstaller` (`USER_ACTION_NOT_REQUIRED` на Android 12+ позволяет обновлять приложение без диалога, если Vlessia уже является установщиком пакета; иначе открывается системное подтверждение, а при первом обновлении — разрешение `ACTION_MANAGE_UNKNOWN_APP_SOURCES` с автоматическим продолжением установки при возврате в приложение).
+
+«Постоянный VPN» Android запускает `VlessiaVpnService` без команды — служба подключается к выбранному серверу. Плитка в шторке (`VlessiaTile`) подключает и отключает.
+
+Для проверки на эмуляторе удобно поднять на компьютере локальный сервер Xray (он доступен в эмуляторе как `10.0.2.2`), а интерфейс отлаживать через `chrome://inspect` — WebView отладочной сборки открыт для DevTools.
 
 ### Бенчмарки
 

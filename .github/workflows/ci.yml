@@ -49,3 +49,35 @@ jobs:
           if [ "$RUNNER_OS" = "macOS" ]; then platform="-platform darwin/universal"; fi
           wails build -trimpath -tags "${{ matrix.tags }}" $platform -ldflags "-s -w -X main.version=ci"
           ls -la build/bin
+
+  android:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Android NDK and gomobile
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;27.2.12479018" "platforms;android-35" "build-tools;35.0.0" > /dev/null
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/27.2.12479018" >> "$GITHUB_ENV"
+          mobile=$(go list -m -f '{{.Version}}' golang.org/x/mobile)
+          go install golang.org/x/mobile/cmd/gomobile@$mobile golang.org/x/mobile/cmd/gobind@$mobile
+
+      - name: Vet and test
+        run: |
+          GOOS=android GOARCH=arm64 go vet ./mobile
+          go test ./mobile ./internal/core
+
+      - name: Build
+        run: |
+          bash android/build-core.sh
+          cd android && bash ./gradlew --no-daemon assembleDebug
+          ls -la app/build/outputs/apk/debug

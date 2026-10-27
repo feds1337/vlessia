@@ -223,7 +223,9 @@ func (a *App) onSecondInstance() {
 func (a *App) ShowWindow() {
 	a.visible.Store(true)
 	runtime.WindowShow(a.ctx)
-	runtime.WindowUnminimise(a.ctx)
+	if goruntime.GOOS != "windows" {
+		runtime.WindowUnminimise(a.ctx)
+	}
 }
 
 // Quit exits the application, disconnecting first.

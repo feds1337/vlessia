@@ -4,6 +4,8 @@ package main
 
 import (
 	"image/color"
+	"runtime"
+	"sync"
 
 	"fyne.io/systray"
 
@@ -23,6 +25,12 @@ type Tray struct {
 	mTun     *systray.MenuItem
 	mStatus  *systray.MenuItem
 	mUpdate  *systray.MenuItem
+
+	mu          sync.Mutex
+	lastState   string
+	lastMode    string
+	lastUpdState string
+	lastUpdVer  string
 }
 
 func StartTray(app *App) *Tray {
@@ -33,15 +41,21 @@ func StartTray(app *App) *Tray {
 		iconOff:  makeIcon(color.RGBA{0x6b, 0x72, 0x80, 0xff}),
 		iconWait: makeIcon(color.RGBA{0xc2, 0x7c, 0x0e, 0xff}),
 	}
-	// systray runs its own Win32 message loop on a locked OS thread.
-	go systray.Run(t.onReady, func() {})
+	// systray creates a Win32 window and runs GetMessageW on the calling
+	// thread, but only calls LockOSThread in init() (the main goroutine).
+	// Lock this goroutine to its OS thread so the Go scheduler never
+	// migrates the message loop away from the thread that owns the window.
+	go func() {
+		runtime.LockOSThread()
+		systray.Run(t.onReady, func() {})
+	}()
 	return t
 }
 
 func (t *Tray) onReady() {
 	systray.SetIcon(t.iconOff)
 	systray.SetTooltip("Vlessia — отключено")
-	systray.SetOnTapped(t.app.ShowWindow)
+	systray.SetOnTapped(func() { go t.app.ShowWindow() })
 
 	t.mStatus = systray.AddMenuItem("Отключено", "")
 	t.mStatus.Disable()
@@ -58,17 +72,23 @@ func (t *Tray) onReady() {
 
 	var mode string
 	t.app.store.Read(func(d *store.Data) { mode = d.Settings.Mode })
+	t.mu.Lock()
+	t.lastState = "disconnected"
+	t.lastMode = mode
 	t.setModeChecks(mode)
+	t.mu.Unlock()
 	close(t.ready)
 
 	go func() {
 		for {
 			select {
 			case <-mShow.ClickedCh:
-				t.app.ShowWindow()
+				go t.app.ShowWindow()
 			case <-t.mUpdate.ClickedCh:
-				t.app.ShowWindow()
-				go func() { _ = t.app.ApplyUpdate() }()
+				go func() {
+					t.app.ShowWindow()
+					_ = t.app.ApplyUpdate()
+				}()
 			case <-t.mToggle.ClickedCh:
 				go t.toggle()
 			case <-t.mProxy.ClickedCh:
@@ -76,7 +96,7 @@ func (t *Tray) onReady() {
 			case <-t.mTun.ClickedCh:
 				go t.setMode("tun")
 			case <-mQuit.ClickedCh:
-				t.app.Quit()
+				go t.app.Quit()
 				return
 			}
 		}
@@ -90,7 +110,10 @@ func (t *Tray) toggle() {
 }
 
 func (t *Tray) setMode(mode string) {
+	t.mu.Lock()
+	t.lastMode = mode
 	t.setModeChecks(mode)
+	t.mu.Unlock()
 	if err := t.app.SetMode(mode); err != nil {
 		t.app.ShowWindow()
 	}
@@ -115,7 +138,17 @@ func (t *Tray) Update(st Status) {
 	}
 	var mode string
 	t.app.store.Read(func(d *store.Data) { mode = d.Settings.Mode })
-	t.setModeChecks(mode)
+
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if mode != t.lastMode {
+		t.lastMode = mode
+		t.setModeChecks(mode)
+	}
+	if st.State == t.lastState {
+		return
+	}
+	t.lastState = st.State
 
 	switch st.State {
 	case "connected":
@@ -148,6 +181,13 @@ func (t *Tray) SetUpdate(info UpdateInfo) {
 	default:
 		return
 	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if info.State == t.lastUpdState && info.Latest == t.lastUpdVer {
+		return
+	}
+	t.lastUpdState = info.State
+	t.lastUpdVer = info.Latest
 	if info.State == "available" {
 		t.mUpdate.SetTitle("Установить обновление " + info.Latest)
 		t.mUpdate.Show()

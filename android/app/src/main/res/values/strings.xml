@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Vlessia</string>
+    <string name="channel_vpn">VPN-подключение</string>
+    <string name="state_connecting">Подключение…</string>
+    <string name="state_connected">Подключено</string>
+    <string name="state_disconnecting">Отключение…</string>
+    <string name="action_disconnect">Отключить</string>
+    <string name="scan_prompt">Наведите камеру на QR-код сервера или подписки</string>
+</resources>

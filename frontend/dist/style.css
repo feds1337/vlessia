@@ -708,6 +708,78 @@ html.no-anim ::backdrop {
   transition: none !important;
 }
 
+/* ---------- Android ----------
+   The page is drawn edge to edge; MainActivity passes the system bar sizes
+   as --inset-*. On a phone held upright the dock becomes the top panel,
+   still lighting up when connected. */
+
+html.android { -webkit-tap-highlight-color: transparent; }
+html.android .dock {
+  padding-top: calc(var(--inset-top, 0px) + 18px);
+  padding-left: calc(var(--inset-left, 0px) + 18px);
+}
+html.android main {
+  padding-top: calc(var(--inset-top, 0px) + 12px);
+  padding-right: calc(var(--inset-right, 0px) + 18px);
+  padding-bottom: calc(var(--inset-bottom, 0px) + 12px);
+}
+html.android .toasts { bottom: calc(var(--inset-bottom, 0px) + 16px); }
+html.android dialog { bottom: var(--inset-bottom, 0px); }
+html.android #autostart-hint { margin-left: 0; }
+
+@media (max-width: 640px) {
+  body { flex-direction: column; }
+
+  .dock {
+    width: auto;
+    overflow: hidden;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+    padding: 14px 18px 16px;
+  }
+  html.android .dock {
+    padding-top: calc(var(--inset-top, 0px) + 14px);
+    padding-left: calc(var(--inset-left, 0px) + 18px);
+    padding-right: calc(var(--inset-right, 0px) + 18px);
+  }
+  .status { margin-top: 18px; }
+  .status-word { font-size: 28px; }
+  .meters { margin-top: 14px; }
+  .dock-actions { margin-top: 0; padding-top: 16px; gap: 10px; }
+  .toggle { height: 50px; }
+  .dock-foot { display: none; }
+  .update { margin-top: 14px; }
+
+  main { padding: 6px 16px 12px; min-height: 0; }
+  html.android main {
+    padding-top: 6px;
+    padding-left: calc(var(--inset-left, 0px) + 16px);
+    padding-right: calc(var(--inset-right, 0px) + 16px);
+  }
+  .tabs { gap: 0; justify-content: space-between; overflow-x: auto; scrollbar-width: none; }
+  .tab { padding: 10px 2px 12px; }
+  .view { padding-top: 12px; }
+
+  .bar .search { flex-basis: 100%; }
+  #add-btn { margin-left: auto; }
+  #sub-form .field-input { flex-basis: 100%; }
+  #sub-form .btn { width: 100%; }
+
+  .row { min-height: 54px; }
+  .list { margin: 0 -10px; padding: 0 2px; }
+
+  .settings { max-width: none; padding-right: 0; }
+  .pair { flex-wrap: wrap; }
+  .pair .row-field { min-width: 140px; }
+
+  dialog { max-width: calc(100vw - 24px); }
+  dialog form { padding: 20px 18px 16px; }
+  .dialog-actions { flex-wrap: wrap; }
+
+  .toasts { left: 16px; right: 16px; }
+  .toast { max-width: none; }
+}
+
 /* ---------- first run ---------- */
 
 .empty-bot { margin-top: 14px; }

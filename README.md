@@ -4,13 +4,13 @@
 
 # Vlessia
 
-**Быстрый и красивый VPN-клиент для Windows, macOS и Linux на базе Xray-core**
+**Быстрый и красивый VPN-клиент для Windows, macOS, Linux и Android на базе Xray-core**
 
 VLESS · Hysteria 2 · AmneziaWG · WireGuard · OpenVPN · Outline — в одном окне и одном `.exe`
 
 [![Release](https://img.shields.io/github/v/release/feds1337/vlessia?style=for-the-badge&color=0e7c86&label=версия)](https://github.com/feds1337/vlessia/releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/feds1337/vlessia/total?style=for-the-badge&color=0ea5e9&label=загрузки)](https://github.com/feds1337/vlessia/releases)
-[![Platforms](https://img.shields.io/badge/Windows%20%7C%20macOS%20%7C%20Linux-0e7c86?style=for-the-badge&label=%D1%81%D0%B8%D1%81%D1%82%D0%B5%D0%BC%D1%8B)](#-установка)
+[![Platforms](https://img.shields.io/badge/Windows%20%7C%20macOS%20%7C%20Linux%20%7C%20Android-0e7c86?style=for-the-badge&label=%D1%81%D0%B8%D1%81%D1%82%D0%B5%D0%BC%D1%8B)](#-установка)
 [![License](https://img.shields.io/github/license/feds1337/vlessia?style=for-the-badge&color=a855f7&label=лицензия)](LICENSE)
 
 ### [⬇️ Скачать последнюю версию](https://github.com/feds1337/vlessia/releases/latest)
@@ -28,7 +28,7 @@ VLESS · Hysteria 2 · AmneziaWG · WireGuard · OpenVPN · Outline — в од�
 <td width="50%" valign="top">
 
 ### 🚀 Один клик — и вы в сети
-Скопировали ссылку или подписку → «Вставить из буфера» → большая кнопка. Всё. QR-код тоже подойдёт: Vlessia найдёт его прямо на экране или в картинке.
+Скопировали ссылку или подписку → «Вставить из буфера» → большая кнопка. Всё. QR-код тоже подойдёт: на телефоне — камерой, на компьютере — прямо с экрана или из картинки.
 
 ### 🛡️ Два режима
 **Прокси** — без прав администратора, для браузеров и большинства программ.
@@ -43,11 +43,11 @@ VLESS · Hysteria 2 · AmneziaWG · WireGuard · OpenVPN · Outline — в од�
 ### 🧩 Почти любые протоколы
 От VLESS REALITY до AmneziaWG 3.1 и OpenVPN — без установки сторонних программ.
 
-### 🏁 Запуск вместе с Windows
-Автозапуск сразу в трей и автоподключение — даже в режиме «Весь трафик», без окна UAC.
+### 🏁 Запуск вместе с системой
+Автозапуск сразу в трей и автоподключение — даже в режиме «Весь трафик», без окна UAC. На Android — «Постоянный VPN» и плитка в шторке.
 
 ### 🔄 Обновляется сам
-Находит новую версию на GitHub, проверяет контрольную сумму и ставит её в один клик.
+Находит новую версию на GitHub, проверяет контрольную сумму и ставит её в один клик (а на Android — скачивает и обновляет автоматически).
 
 ### 🔁 Не отваливается
 Сам проверяет соединение и переподключается, а если сервер умер — переходит на самый быстрый из подписки. Может и сразу подключаться к самому быстрому.
@@ -90,6 +90,7 @@ VLESS · Hysteria 2 · AmneziaWG · WireGuard · OpenVPN · Outline — в од�
 | **macOS 11+** (Intel и Apple Silicon) | `Vlessia-…-macos-universal.dmg` | Перетащите Vlessia в «Программы». При первом запуске — см. примечание ниже |
 | **Ubuntu / Debian** | `vlessia_…_amd64.deb` | `sudo apt install ./vlessia_…_amd64.deb` |
 | **Другие Linux** | `vlessia-…-linux-amd64.tar.gz` | Распакуйте и запустите `./vlessia` (нужны GTK 3 и WebKitGTK 4.1) |
+| **Android 7+** | `Vlessia-…-android-arm64-v8a.apk` | Откройте APK на телефоне и разрешите установку. Для старых 32-битных телефонов — `…-armeabi-v7a.apk`, не уверены — `…-universal.apk` |
 
 Дальше одинаково: скопируйте ссылку на сервер или подписку, нажмите **«Вставить»** и большую кнопку подключения. 🎉
 
@@ -124,7 +125,7 @@ VLESS · Hysteria 2 · AmneziaWG · WireGuard · OpenVPN · Outline — в од�
 <details>
 <summary><b>Как обновить клиент?</b></summary>
 
-Клиент проверяет GitHub после запуска и раз в 6 часов. Когда выходит новая версия, в левой колонке появляется «Доступна версия…». **Windows:** нажмите «Обновить» — клиент скачает установщик, сверит контрольную сумму, обновится и перезапустится, а если VPN был включён — подключится снова. **macOS, Linux и portable-версия:** кнопка откроет страницу релиза, откуда нужно скачать новую версию. Автопроверку можно выключить в настройках.
+Клиент проверяет GitHub после запуска и раз в 6 часов. Когда выходит новая версия, в левой колонке появляется «Доступна версия…». **Windows:** нажмите «Обновить» — клиент скачает установщик, сверит контрольную сумму, обновится и перезапустится, а если VPN был включён — подключится снова. **Android:** клиент сам скачивает APK для вашего телефона, сверяет контрольную сумму и автоматически запускает обновление (на Android 12+ при повторных обновлениях — полностью фоново, а при первом обновлении попросит разрешить установку для Vlessia). **macOS, Linux и portable-версия:** кнопка откроет страницу релиза, откуда нужно скачать новую версию. Автопроверку можно выключить в настройках.
 </details>
 
 <details>
@@ -136,13 +137,20 @@ VLESS · Hysteria 2 · AmneziaWG · WireGuard · OpenVPN · Outline — в од�
 <details>
 <summary><b>Где хранятся мои серверы и как всё удалить?</b></summary>
 
-Настройки, серверы и логи лежат в `%APPDATA%\Vlessia` (кнопка «Открыть папку данных» в настройках). Удаляется клиент через «Параметры → Приложения»: установщик уберёт автозапуск и вернёт системный прокси, а ваши серверы оставит на случай переустановки.
+Настройки, серверы и логи лежат в `%APPDATA%\Vlessia` (кнопка «Открыть папку данных» в настройках). Удаляется клиент через «Параметры → Приложения»: установщик уберёт автозапуск и возврат системного прокси, а ваши серверы оставит на случай переустановки.
+</details>
+
+<details>
+<summary><b>Как включать VPN на Android без открытия приложения?</b></summary>
+
+Добавьте плитку **Vlessia** в шторку быстрых настроек — она подключает выбранный сервер и отключает VPN. Чтобы VPN включался сам после перезагрузки телефона, откройте **Настройки → Запуск → «Открыть настройки VPN»** и включите для Vlessia «Постоянный VPN». Ссылки и подписки можно отправлять в Vlessia из других приложений через «Поделиться».
 </details>
 
 <details>
 <summary><b>Известные ограничения</b></summary>
 
-- Windows 10 / 11 (x64), macOS 11+ (Intel и Apple Silicon), Linux x64 с GTK 3 и WebKitGTK 4.1.
+- Windows 10 / 11 (x64), macOS 11+ (Intel и Apple Silicon), Linux x64 с GTK 3 и WebKitGTK 4.1, Android 7+ (ARM64, ARMv7, x86_64).
+- Android: всегда «Весь трафик» через системный VPN — режима «Прокси» нет. Локальные SOCKS5 и HTTP-прокси (`127.0.0.1:10808` / `10809`) при подключении тоже доступны другим приложениям. Пинг серверов идёт напрямую, в обход VPN.
 - macOS: значка в строке меню нет — при закрытии окно сворачивается в Dock, выход через меню «Vlessia → Выйти» (⌘Q). В режиме «Весь трафик» пароль администратора запрашивается при каждом подключении.
 - Linux: значок в трее показывается в окружениях с поддержкой StatusNotifierItem (KDE и большинство других; в GNOME нужно расширение AppIndicator). Для «Весь трафик» нужен `pkexec` (polkit).
 - Параметр `allowInsecure` в Xray удалён (с 01.06.2026); вместо него поддерживаются `pcs` (pinnedPeerCertSha256) и `vcn` (verifyPeerCertByName). Для Hysteria 2 с `insecure=1` сертификат закрепляется автоматически.
@@ -154,7 +162,7 @@ VLESS · Hysteria 2 · AmneziaWG · WireGuard · OpenVPN · Outline — в од�
 
 ## 🛠️ Для разработчиков
 
-Vlessia написан на Go: [Xray-core](https://github.com/XTLS/Xray-core) встроен как библиотека, интерфейс на [Wails](https://wails.io) (WebView2). Сборка, тесты, выпуск релизов и устройство клиента — в **[docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)**.
+Vlessia написан на Go: [Xray-core](https://github.com/XTLS/Xray-core) встроен как библиотека, интерфейс на [Wails](https://wails.io) (WebView2). Android-версия — то же ядро, собранное gomobile, и тот же интерфейс в WebView. Сборка, тесты, выпуск релизов и устройство клиента — в **[docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)**.
 
 ```bash
 wails build -clean -trimpath -ldflags "-s -w" -nsis

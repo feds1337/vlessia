@@ -13,8 +13,10 @@ import (
 
 // Xray's TUN inbound (proxy/tun.Handler in xray-core v1.260327.0) has no
 // Close: when an instance stops, the gVisor stack behind the inbound and
-// the goroutine reading the TUN device keep running, and every reconnect in
-// TUN mode leaves another one behind.
+// the goroutine reading the TUN device keep running. On Android the reader
+// then sits on a descriptor number that is already closed — holding the
+// VPN interface up until the next packet arrives, or reading from whatever
+// reuses that number, such as the next connection's TUN device.
 //
 // closeTunStack stops that stack. The unexported field is reached by
 // reflection; TestTunStackLayout guards against changes.

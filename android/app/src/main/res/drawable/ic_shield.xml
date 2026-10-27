@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The Vlessia shield with its keyhole cut out: notification and tile icon. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="32"
+    android:viewportHeight="32">
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:fillType="evenOdd"
+        android:pathData="M3,2h26v13c0,8 -7,12 -13,15C10,27 3,23 3,15z M14.4,16.113A3.5,3.5 0 1,1 17.6,16.113L17.6,22L14.4,22Z" />
+</vector>

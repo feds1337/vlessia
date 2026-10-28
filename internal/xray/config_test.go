@@ -20,7 +20,7 @@ var links = []string{
 	"vless://b831381d-6324-4d53-ad4f-8cda48b30811@1.2.3.4:443?encryption=none&flow=xtls-rprx-vision&security=reality&sni=www.microsoft.com&fp=chrome&pbk=SbVKOEMjK0sIlbwg4akyBg5mL5KZwwB-ed4eEE7YnRc&sid=6ba85179e30d4fc2&type=tcp&headerType=none#Reality%20NL",
 	"vless://b831381d-6324-4d53-ad4f-8cda48b30811@example.com:443?type=xhttp&security=tls&sni=example.com&path=%2Fxh&mode=auto&alpn=h2%2Chttp%2F1.1#xhttp",
 	"vless://b831381d-6324-4d53-ad4f-8cda48b30811@example.com:443?type=grpc&security=tls&serviceName=grpcsvc&mode=multi#grpc",
-	"vless://b831381d-6324-4d53-ad4f-8cda48b30811@10.0.0.1:80?type=ws&path=%2Fws&host=example.com#ws-plain",
+	"vless://b831381d-6324-4d53-ad4f-8cda48b30811@example.com:80?type=ws&path=%2Fws&host=example.com#ws-plain",
 	"trojan://secret@example.com:443?security=tls&sni=example.com&type=tcp#trojan",
 	"ss://" + base64.RawURLEncoding.EncodeToString([]byte("chacha20-ietf-poly1305:pass")) + "@5.6.7.8:8388#ss-sip002",
 	"ss://" + base64.StdEncoding.EncodeToString([]byte("aes-256-gcm:pass@5.6.7.8:8388")) + "#ss-legacy",
@@ -45,15 +45,12 @@ func TestParseAndBuild(t *testing.T) {
 				if link != links[0] {
 					o.TunName = "Vlessia"
 				}
-				if s.Security == "none" && s.Protocol == "vless" {
-					o.ServerAddress = "10.0.0.1"
-				}
 			}
 			cfg, err := BuildConfig(s, o)
 			if err != nil {
 				t.Fatalf("build %s: %v", s.Name, err)
 			}
-			if _, err := serial.LoadJSONConfig(bytes.NewReader(cfg)); err != nil {
+			if _, err := loadConfig(cfg); err != nil {
 				t.Fatalf("xray rejected config for %s (tun=%v): %v\n%s", s.Name, tunMode, err, cfg)
 			}
 		}

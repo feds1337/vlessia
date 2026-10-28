@@ -38,8 +38,16 @@ func (a *App) prepareTUN(srv *profile.Server, serverIP string, opts *xray.Option
 	return nil
 }
 
-// activateTUN configures the adapter Xray has created. The routes vanish
-// with the adapter when Xray stops, so there is no session to close.
+type winTunSession struct{}
+
+func (winTunSession) Close()              { tun.Deconfigure() }
+func (winTunSession) Done() <-chan struct{} { return nil }
+
+// activateTUN configures the adapter Xray has created and returns a session
+// whose Close removes the TUN routes and DNS settings before Xray stops.
 func (a *App) activateTUN(_ string, settings store.Settings) (tunSession, error) {
-	return nil, tun.Configure(settings.DNS, a.log.Printf)
+	if err := tun.Configure(settings.DNS, a.log.Printf); err != nil {
+		return nil, err
+	}
+	return winTunSession{}, nil
 }

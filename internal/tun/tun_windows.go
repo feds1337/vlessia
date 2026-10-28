@@ -5,6 +5,7 @@
 package tun
 
 import (
+	"crypto/md5"
 	_ "embed"
 	"errors"
 	"fmt"
@@ -15,9 +16,12 @@ import (
 	"strings"
 	"syscall"
 	"time"
+	"unsafe"
 
 	"golang.org/x/sys/windows"
 	"golang.org/x/text/encoding/charmap"
+	"golang.zx2c4.com/wintun"
+	"golang.zx2c4.com/wireguard/windows/tunnel/winipcfg"
 )
 
 // AdapterName is the name of the Wintun adapter created by Xray.
@@ -68,24 +72,35 @@ func sameFile(path string) bool {
 // DefaultInterface returns the name of the adapter currently used to reach
 // the internet. Must be called before the TUN routes are installed.
 func DefaultInterface() (string, error) {
-	var idx uint32
 	sa := &windows.SockaddrInet4{Addr: [4]byte{1, 1, 1, 1}}
-	if err := windows.GetBestInterfaceEx(sa, &idx); err != nil {
-		return "", fmt.Errorf("не найден сетевой адаптер с выходом в интернет: %w", err)
+	cleaned := false
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		var idx uint32
+		if err := windows.GetBestInterfaceEx(sa, &idx); err != nil {
+			return "", fmt.Errorf("не найден сетевой адаптер с выходом в интернет: %w", err)
+		}
+		inf, err := net.InterfaceByIndex(int(idx))
+		if err != nil {
+			return "", err
+		}
+		if inf.Name != AdapterName {
+			return inf.Name, nil
+		}
+		if !cleaned {
+			cleaned = true
+			Cleanup()
+			continue
+		}
+		if !time.Now().Before(deadline) {
+			return "", errors.New("маршрут по умолчанию уже указывает в TUN — отключите другой VPN")
+		}
+		time.Sleep(100 * time.Millisecond)
 	}
-	inf, err := net.InterfaceByIndex(int(idx))
-	if err != nil {
-		return "", err
-	}
-	if inf.Name == AdapterName {
-		return "", errors.New("маршрут по умолчанию уже указывает в TUN — отключите другой VPN")
-	}
-	return inf.Name, nil
 }
 
 // Configure assigns addresses, DNS and routes to the TUN adapter once Xray
-// has created it. Everything is non-persistent and disappears with the
-// adapter when Xray stops.
+// has created it.
 func Configure(dns []string, logf func(string, ...any)) error {
 	if err := waitInterface(AdapterName, 10*time.Second); err != nil {
 		return err
@@ -104,6 +119,7 @@ func Configure(dns []string, logf func(string, ...any)) error {
 	}
 	for _, args := range steps {
 		if err := netsh(args...); err != nil {
+			Deconfigure()
 			return err
 		}
 	}
@@ -124,6 +140,87 @@ func Configure(dns []string, logf func(string, ...any)) error {
 	}
 	FlushDNS()
 	return nil
+}
+
+// Deconfigure removes routes, IP addresses, DNS servers and metric overrides
+// from the Vlessia TUN adapter so traffic returns to the physical interface
+// immediately, even before the Wintun adapter is destroyed.
+func Deconfigure() {
+	for _, luid := range adapterLUIDs() {
+		_ = luid.FlushRoutes(windows.AF_INET)
+		_ = luid.FlushIPAddresses(windows.AF_INET)
+		_ = luid.FlushDNS(windows.AF_INET)
+		_ = luid.FlushRoutes(windows.AF_INET6)
+		_ = luid.FlushIPAddresses(windows.AF_INET6)
+		_ = luid.FlushDNS(windows.AF_INET6)
+		for _, family := range []winipcfg.AddressFamily{windows.AF_INET, windows.AF_INET6} {
+			if ipif, err := luid.IPInterface(family); err == nil {
+				ipif.UseAutomaticMetric = true
+				_ = ipif.Set()
+			}
+		}
+	}
+	name := "name=" + AdapterName
+	iface := "interface=" + AdapterName
+	for _, args := range [][]string{
+		{"interface", "ipv4", "delete", "route", "prefix=0.0.0.0/1", iface, "store=active"},
+		{"interface", "ipv4", "delete", "route", "prefix=128.0.0.0/1", iface, "store=active"},
+		{"interface", "ipv6", "delete", "route", "prefix=::/1", iface, "store=active"},
+		{"interface", "ipv6", "delete", "route", "prefix=8000::/1", iface, "store=active"},
+		{"interface", "ipv4", "set", "dnsservers", name, "source=dhcp", "validate=no"},
+	} {
+		_ = hiddenCmd("netsh", args...).Run()
+	}
+}
+
+// Cleanup removes TUN routes/DNS, deletes any leftover Wintun adapter and
+// flushes the Windows DNS cache.
+func Cleanup() {
+	Deconfigure()
+	if ad, err := wintun.OpenAdapter(AdapterName); err == nil {
+		_ = ad.Close()
+	}
+	sa := &windows.SockaddrInet4{Addr: [4]byte{1, 1, 1, 1}}
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		var idx uint32
+		if windows.GetBestInterfaceEx(sa, &idx) != nil {
+			break
+		}
+		inf, err := net.InterfaceByIndex(int(idx))
+		if err != nil || inf.Name != AdapterName {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	FlushDNS()
+}
+
+func adapterLUIDs() []winipcfg.LUID {
+	var luids []winipcfg.LUID
+	add := func(l winipcfg.LUID) {
+		if l == 0 {
+			return
+		}
+		for _, existing := range luids {
+			if existing == l {
+				return
+			}
+		}
+		luids = append(luids, l)
+	}
+	// Xray's WindowsTun derives the adapter GUID deterministically from MD5(name).
+	id := md5.Sum([]byte(AdapterName))
+	guid := (*windows.GUID)(unsafe.Pointer(&id[0]))
+	if luid, err := winipcfg.LUIDFromGUID(guid); err == nil {
+		add(luid)
+	}
+	if inf, err := net.InterfaceByName(AdapterName); err == nil {
+		if luid, err := winipcfg.LUIDFromIndex(uint32(inf.Index)); err == nil {
+			add(luid)
+		}
+	}
+	return luids
 }
 
 // FlushDNS clears the Windows DNS cache so stale answers are not reused.

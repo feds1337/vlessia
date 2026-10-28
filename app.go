@@ -8,12 +8,14 @@ import (
 	"net"
 	"net/url"
 	"os"
+	"os/signal"
 	"path/filepath"
 	goruntime "runtime"
 	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
@@ -121,6 +123,15 @@ func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
 	a.visible.Store(!a.autostarted)
 	a.restoreLeftoverProxy()
+	if tun.IsAdmin() {
+		tun.Cleanup()
+	}
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		<-sigCh
+		_ = a.Disconnect()
+	}()
 	a.lib.UpgradeServers()
 	a.tray = StartTray(a)
 	go a.lib.AutoUpdateLoop()
@@ -231,6 +242,7 @@ func (a *App) ShowWindow() {
 // Quit exits the application, disconnecting first.
 func (a *App) Quit() {
 	a.quitting = true
+	_ = a.Disconnect()
 	runtime.Quit(a.ctx)
 }
 
@@ -606,7 +618,7 @@ func (a *App) Disconnect() error {
 	step("остановка xray", func() { err = eng.CloseXray() })
 	step("остановка туннеля", eng.CloseBridge)
 	if mode == "tun" {
-		step("сброс DNS-кэша", tun.FlushDNS)
+		step("очистка TUN и сброс DNS-кэша", tun.Cleanup)
 	}
 	a.log.Printf("отключено за %v", time.Since(started).Round(time.Millisecond))
 	a.setStatus(func(s *Status) { *s = Status{State: "disconnected", Admin: tun.IsAdmin()} })

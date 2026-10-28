@@ -18,6 +18,7 @@ import (
 	"github.com/feds1337/vlessia/internal/autostart"
 	"github.com/feds1337/vlessia/internal/store"
 	"github.com/feds1337/vlessia/internal/sysproxy"
+	"github.com/feds1337/vlessia/internal/tun"
 )
 
 //go:embed all:frontend/dist
@@ -99,6 +100,9 @@ func main() {
 // uninstaller. Servers and settings are left in place.
 func runCleanup() {
 	autostart.Disable()
+	if tun.IsAdmin() {
+		tun.Cleanup()
+	}
 	st, err := store.Open()
 	if err != nil {
 		return

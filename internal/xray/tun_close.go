@@ -9,18 +9,20 @@ import (
 	"github.com/xtls/xray-core/features/inbound"
 	"github.com/xtls/xray-core/proxy"
 	"github.com/xtls/xray-core/proxy/tun"
+	"github.com/xtls/xray-core/transport/internet"
 )
 
-// Xray's TUN inbound (proxy/tun.Handler in xray-core v1.260327.0) has no
-// Close: when an instance stops, the gVisor stack behind the inbound and
-// the goroutine reading the TUN device keep running. On Android the reader
-// then sits on a descriptor number that is already closed — holding the
-// VPN interface up until the next packet arrives, or reading from whatever
-// reuses that number, such as the next connection's TUN device.
+// closeTunStack stops the TUN inbound's stack and underlying TUN device
+// (such as WindowsTun on Windows) before core.Close tears down outbounds,
+// and clears global dialer controllers registered by tun.Handler.Start.
 //
-// closeTunStack stops that stack. The unexported field is reached by
-// reflection; TestTunStackLayout guards against changes.
+// The unexported stack field is also reached by reflection as a safeguard;
+// TestTunStackLayout guards against layout changes.
 func closeTunStack(c *core.Instance) {
+	internet.ControllersLock.Lock()
+	internet.Controllers = nil
+	internet.ControllersLock.Unlock()
+
 	m, ok := c.GetFeature(inbound.ManagerType()).(inbound.Manager)
 	if !ok {
 		return
@@ -40,6 +42,7 @@ func closeTunStack(c *core.Instance) {
 	if s := tunStack(th); s != nil {
 		_ = s.Close()
 	}
+	_ = th.Close()
 }
 
 // tunStack returns the handler's stack, or nil.

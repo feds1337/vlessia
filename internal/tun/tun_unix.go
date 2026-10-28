@@ -21,6 +21,9 @@ func RelaunchElevated(string) error {
 // the TUN device.
 func FlushDNS() {}
 
+// Cleanup is a no-op on Unix: the privileged helper cleans up routes and DNS.
+func Cleanup() {}
+
 // DefaultInterface returns the name of the adapter used to reach the
 // internet.
 func DefaultInterface() (string, error) {

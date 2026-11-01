@@ -50,23 +50,45 @@
   color-scheme: light;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --paper: #15181e;
-    --surface: #1c2027;
-    --ink: #e6e8ec;
-    --muted: #8d94a1;
-    --line: #2a2f38;
-    --hover: #232831;
-    --lagoon: #2aa7b2;
-    --lagoon-ink: #08292c;
-    --lagoon-soft: #173338;
-    --amber: #e0a03c;
-    --danger: #ef6b60;
-    --dock: #1a1e24;
-    color-scheme: dark;
-  }
+/* The scheme (light/dark) and the accent colour are chosen in the settings;
+   theme.js sets data-scheme and data-accent on <html> before the first
+   paint. --lagoon is the accent, whatever its colour. */
+:root[data-scheme="dark"] {
+  --paper: #15181e;
+  --surface: #1c2027;
+  --ink: #e6e8ec;
+  --muted: #8d94a1;
+  --line: #2a2f38;
+  --hover: #232831;
+  --lagoon: #2aa7b2;
+  --lagoon-ink: #08292c;
+  --lagoon-soft: #173338;
+  --amber: #e0a03c;
+  --danger: #ef6b60;
+  --dock: #1a1e24;
+  color-scheme: dark;
 }
+
+/* Accents: the light variant first, then the dark one. In light schemes the
+   accent is deep with white text on it, in dark ones bright with dark text
+   (Android colours the status bar icons by this). */
+:root[data-accent="blue"] { --lagoon: #2560c4; --lagoon-ink: #ffffff; --lagoon-soft: #e4ecfa; }
+:root[data-scheme="dark"][data-accent="blue"] { --lagoon: #5b9cf5; --lagoon-ink: #0a1f3d; --lagoon-soft: #182a45; }
+
+:root[data-accent="violet"] { --lagoon: #6a4cc2; --lagoon-ink: #ffffff; --lagoon-soft: #ece7f9; }
+:root[data-scheme="dark"][data-accent="violet"] { --lagoon: #a48bf0; --lagoon-ink: #1e1340; --lagoon-soft: #29233f; }
+
+:root[data-accent="rose"] { --lagoon: #bf3a6c; --lagoon-ink: #ffffff; --lagoon-soft: #f9e6ee; }
+:root[data-scheme="dark"][data-accent="rose"] { --lagoon: #f07aa6; --lagoon-ink: #3d0f22; --lagoon-soft: #3a1f2b; }
+
+:root[data-accent="orange"] { --lagoon: #bf5410; --lagoon-ink: #ffffff; --lagoon-soft: #fbeadf; }
+:root[data-scheme="dark"][data-accent="orange"] { --lagoon: #f39a52; --lagoon-ink: #3a1a04; --lagoon-soft: #3a2a1e; }
+
+:root[data-accent="green"] { --lagoon: #26844a; --lagoon-ink: #ffffff; --lagoon-soft: #e3f3e8; }
+:root[data-scheme="dark"][data-accent="green"] { --lagoon: #5cc581; --lagoon-ink: #0b2b16; --lagoon-soft: #1a3324; }
+
+:root[data-accent="graphite"] { --lagoon: #3d4554; --lagoon-ink: #ffffff; --lagoon-soft: #e7e9ed; }
+:root[data-scheme="dark"][data-accent="graphite"] { --lagoon: #b4bccb; --lagoon-ink: #1a1e26; --lagoon-soft: #2a2f38; }
 
 * { box-sizing: border-box; }
 
@@ -469,6 +491,43 @@ textarea { height: auto; padding: 10px; resize: vertical; font: 12.5px/1.5 var(-
 .hint { font-size: 12.5px; color: var(--muted); margin: -4px 0 0 25px; }
 .hint.warn { color: var(--amber); }
 .row-field + .hint, .pair + .hint { margin-left: 0; }
+
+/* Accent colour picker: a row of round swatches (radio buttons). */
+.swatches { display: flex; flex-wrap: wrap; gap: 10px; margin: 0; padding: 0; border: 0; }
+.swatches legend { font-size: 13px; color: var(--muted); padding: 0; margin-bottom: 7px; }
+.swatch { position: relative; cursor: pointer; }
+.swatch input { position: absolute; inset: 0; margin: 0; opacity: 0; cursor: pointer; }
+.swatch span {
+  display: block;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: var(--c);
+  box-shadow: 0 0 0 2px var(--paper), 0 0 0 2px transparent;
+  transition: box-shadow .18s ease, transform .18s ease;
+}
+.swatch:hover span { transform: scale(1.08); }
+.swatch input:checked + span { box-shadow: 0 0 0 2px var(--paper), 0 0 0 4px var(--c); }
+.swatch input:focus-visible + span { outline: 2px solid var(--ink); outline-offset: 5px; }
+.swatch[data-accent="lagoon"]   { --c: #0e7c86; }
+.swatch[data-accent="blue"]     { --c: #2560c4; }
+.swatch[data-accent="violet"]   { --c: #6a4cc2; }
+.swatch[data-accent="rose"]     { --c: #bf3a6c; }
+.swatch[data-accent="orange"]   { --c: #bf5410; }
+.swatch[data-accent="green"]    { --c: #26844a; }
+.swatch[data-accent="graphite"] { --c: #3d4554; }
+:root[data-scheme="dark"] .swatch[data-accent="lagoon"]   { --c: #2aa7b2; }
+:root[data-scheme="dark"] .swatch[data-accent="blue"]     { --c: #5b9cf5; }
+:root[data-scheme="dark"] .swatch[data-accent="violet"]   { --c: #a48bf0; }
+:root[data-scheme="dark"] .swatch[data-accent="rose"]     { --c: #f07aa6; }
+:root[data-scheme="dark"] .swatch[data-accent="orange"]   { --c: #f39a52; }
+:root[data-scheme="dark"] .swatch[data-accent="green"]    { --c: #5cc581; }
+:root[data-scheme="dark"] .swatch[data-accent="graphite"] { --c: #b4bccb; }
+
+/* Switching the theme or accent fades the colours instead of snapping. */
+html.recolor, html.recolor * {
+  transition: background-color .3s ease, color .3s ease, border-color .3s ease, fill .3s ease !important;
+}
 
 .inline { display: flex; align-items: center; gap: 12px; }
 .inline .btn.ghost { margin-left: -14px; }

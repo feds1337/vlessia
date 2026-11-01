@@ -233,6 +233,18 @@ func AutoConnect() bool {
 	return on
 }
 
+// Theme returns the colour scheme chosen in the settings: "" (follow the
+// system), "light" or "dark". The app colours the system bars by it.
+func Theme() string {
+	a, err := get()
+	if err != nil {
+		return ""
+	}
+	var t string
+	a.store.Read(func(d *store.Data) { t = d.Settings.Theme })
+	return t
+}
+
 // ---------- client ----------
 
 type connStatus struct {

@@ -53,6 +53,11 @@ type Settings struct {
 	// NoAnimations turns interface animations off (stored inverted so that
 	// they are on by default).
 	NoAnimations bool `json:"noAnimations"`
+	// Theme is the colour scheme: "" follows the system, "light" or "dark".
+	Theme string `json:"theme"`
+	// Accent is the accent colour of the interface; "" is the default
+	// lagoon (see frontend/dist/style.css for the others).
+	Accent string `json:"accent"`
 	// NoAutoReconnect disables the connection watchdog, which reconnects
 	// (and then switches servers) when the VPN stops passing traffic.
 	NoAutoReconnect bool `json:"noAutoReconnect"`

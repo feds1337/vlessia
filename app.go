@@ -422,10 +422,29 @@ func (a *App) SaveSettings(s store.Settings) error {
 		return err
 	}
 	a.emitState()
+	if old.Theme != s.Theme {
+		a.applyWindowTheme(s.Theme)
+	}
 	if !affectsConnection(old, s) {
 		return nil
 	}
 	return a.reconnectIfActive()
+}
+
+// applyWindowTheme switches the window's title bar (Windows only) to the
+// theme setting: "" follows the system, "light" or "dark".
+func (a *App) applyWindowTheme(theme string) {
+	if a.ctx == nil {
+		return
+	}
+	switch theme {
+	case "light":
+		runtime.WindowSetLightTheme(a.ctx)
+	case "dark":
+		runtime.WindowSetDarkTheme(a.ctx)
+	default:
+		runtime.WindowSetSystemDefaultTheme(a.ctx)
+	}
 }
 
 // affectsConnection reports whether a settings change requires

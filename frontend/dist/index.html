@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Vlessia</title>
   <link rel="stylesheet" href="style.css">
+  <script src="theme.js"></script>
 </head>
 <body>
   <aside class="dock" id="dock" data-state="disconnected">
@@ -143,6 +144,24 @@
 
         <section>
           <h3>Оформление</h3>
+          <label class="row-field">
+            <span>Тема</span>
+            <select name="theme">
+              <option value="">Как в системе</option>
+              <option value="light">Светлая</option>
+              <option value="dark">Тёмная</option>
+            </select>
+          </label>
+          <fieldset class="swatches">
+            <legend>Цвет акцента</legend>
+            <label class="swatch" data-accent="lagoon" title="Лагуна"><input type="radio" name="accent" value="" aria-label="Лагуна"><span></span></label>
+            <label class="swatch" data-accent="blue" title="Синий"><input type="radio" name="accent" value="blue" aria-label="Синий"><span></span></label>
+            <label class="swatch" data-accent="violet" title="Фиолетовый"><input type="radio" name="accent" value="violet" aria-label="Фиолетовый"><span></span></label>
+            <label class="swatch" data-accent="rose" title="Розовый"><input type="radio" name="accent" value="rose" aria-label="Розовый"><span></span></label>
+            <label class="swatch" data-accent="orange" title="Оранжевый"><input type="radio" name="accent" value="orange" aria-label="Оранжевый"><span></span></label>
+            <label class="swatch" data-accent="green" title="Зелёный"><input type="radio" name="accent" value="green" aria-label="Зелёный"><span></span></label>
+            <label class="swatch" data-accent="graphite" title="Графит"><input type="radio" name="accent" value="graphite" aria-label="Графит"><span></span></label>
+          </fieldset>
           <label class="check"><input type="checkbox" name="animations"> Анимации</label>
         </section>
 

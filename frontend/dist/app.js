@@ -481,6 +481,8 @@ function fillSettings() {
   f.proxyRules.value = (s.proxyRules || []).join("\n");
   f.directRules.value = (s.directRules || []).join("\n");
   f.animations.checked = !s.noAnimations;
+  f.theme.value = s.theme || "";
+  f.accent.value = s.accent || "";
   f.updateCheck.checked = !s.noUpdateCheck;
   f.logLevel.value = s.logLevel;
   $$("#settings-form select").forEach(syncSelect);
@@ -503,6 +505,8 @@ function readSettings() {
     proxyRules: f.proxyRules.value.split("\n"),
     directRules: f.directRules.value.split("\n"),
     noAnimations: !f.animations.checked,
+    theme: f.theme.value,
+    accent: f.accent.value,
     noUpdateCheck: !f.updateCheck.checked,
     logLevel: f.logLevel.value,
   };
@@ -912,6 +916,7 @@ function bind() {
   $("#settings-form").addEventListener("change", (e) => {
     if (e.target.id === "autostart") return;
     if (e.target.name === "animations") applyMotion(!e.target.checked);
+    if (e.target.name === "theme" || e.target.name === "accent") applyLook(e.target.form.theme.value, e.target.form.accent.value);
     // A bad rule keeps the text so it can be corrected.
     const keep = e.target.tagName === "TEXTAREA";
     call("SaveSettings", readSettings()).then(() => toast("Сохранено")).catch(() => keep || fillSettings());
@@ -935,6 +940,7 @@ function bind() {
   window.runtime.EventsOn("state", (s) => {
     const prevError = state?.status.error;
     state = s;
+    applyLook(s.settings.theme, s.settings.accent);
     render();
     if (s.status.error === "need_admin" && prevError !== "need_admin" && !$("#admin-dialog").open) $("#admin-dialog").showModal();
     if (s.status.error === "need_ovpn_auth" && prevError !== "need_ovpn_auth" && !$("#auth-dialog").open) askCredentials(s.status.serverId, true);
@@ -997,6 +1003,7 @@ async function init() {
   let t;
   [state, upd, platform, t] = await Promise.all([api().GetState(), api().GetUpdate(), api().GetPlatform(), api().GetTraffic()]);
   applyMotion(state.settings.noAnimations);
+  applyLook(state.settings.theme, state.settings.accent);
   applyPlatform();
   moveTabMark();
   renderTraffic(t);

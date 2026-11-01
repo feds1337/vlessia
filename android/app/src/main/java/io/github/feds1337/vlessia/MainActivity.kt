@@ -147,12 +147,20 @@ class MainActivity : Activity() {
 
     /** Status bar icons follow the colour under them: the dock lights up when connected. */
     private fun updateBars() {
-        val dark = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
+        val dark = isDark()
         val connected = Core.state == "connected"
+        web.setBackgroundColor(if (dark) 0xFF15181E.toInt() else 0xFFF5F6F8.toInt())
         WindowInsetsControllerCompat(window, window.decorView).apply {
             isAppearanceLightStatusBars = connected == dark
             isAppearanceLightNavigationBars = !dark
         }
+    }
+
+    /** Whether the page is dark: the theme chosen in the settings, or the system's. */
+    private fun isDark(): Boolean = when (runCatching { Mobile.theme() }.getOrDefault("")) {
+        "dark" -> true
+        "light" -> false
+        else -> (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
     }
 
     private fun runInPage(js: String) {

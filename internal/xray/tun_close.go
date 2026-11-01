@@ -18,31 +18,34 @@ import (
 //
 // The unexported stack field is also reached by reflection as a safeguard;
 // TestTunStackLayout guards against layout changes.
-func closeTunStack(c *core.Instance) {
+//
+// It reports whether a TUN inbound was closed.
+func closeTunStack(c *core.Instance) bool {
 	internet.ControllersLock.Lock()
 	internet.Controllers = nil
 	internet.ControllersLock.Unlock()
 
 	m, ok := c.GetFeature(inbound.ManagerType()).(inbound.Manager)
 	if !ok {
-		return
+		return false
 	}
 	h, err := m.GetHandler(context.Background(), TagTun)
 	if err != nil {
-		return // no TUN inbound in this config
+		return false // no TUN inbound in this config
 	}
 	g, ok := h.(interface{ GetInbound() proxy.Inbound })
 	if !ok {
-		return
+		return false
 	}
 	th, ok := g.GetInbound().(*tun.Handler)
 	if !ok || th == nil {
-		return
+		return false
 	}
 	if s := tunStack(th); s != nil {
 		_ = s.Close()
 	}
 	_ = th.Close()
+	return true
 }
 
 // tunStack returns the handler's stack, or nil.

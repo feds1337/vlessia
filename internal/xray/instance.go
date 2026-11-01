@@ -3,7 +3,9 @@ package xray
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"os"
 	"strings"
 	"sync"
 
@@ -99,11 +101,26 @@ func (i *Instance) Close() error {
 	if i.core == nil {
 		return nil
 	}
-	closeTunStack(i.core)
+	tunClosed := closeTunStack(i.core)
 	err := i.core.Close()
+	if tunClosed && alreadyClosed(err) {
+		// The TUN inbound was closed above, so core.Close closing it again
+		// reports "file already closed" (seen on Android); that is not a
+		// failure.
+		err = nil
+	}
 	i.core = nil
 	resetHysteria()
 	return err
+}
+
+// alreadyClosed reports whether err only says that a file was already
+// closed. Xray joins errors into strings, so the text is checked too.
+func alreadyClosed(err error) bool {
+	if err == nil {
+		return false
+	}
+	return errors.Is(err, os.ErrClosed) || strings.Contains(err.Error(), os.ErrClosed.Error())
 }
 
 // Traffic returns and resets the proxy outbound byte counters.

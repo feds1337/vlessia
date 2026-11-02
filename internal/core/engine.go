@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"net"
 	"net/netip"
 	"os"
@@ -62,6 +63,59 @@ func EffectiveMode(srv *profile.Server, mode string) string {
 		return "tun"
 	}
 	return mode
+}
+
+// balanceGroup returns the servers to balance the connections between: all
+// the servers of srv's subscription (or the manually added ones), minus the
+// full tunnels — each of those needs its own bridge, so they cannot be a
+// member of a balancing group.
+//
+// addrs holds the addresses resolved in advance, which TUN mode needs: once
+// the tunnel is up the system DNS goes into it, and a server could not be
+// resolved for the very connection it has to carry. In proxy mode the names
+// are used as is, so addrs is empty.
+func balanceGroup(lib *Library, srv *profile.Server, settings store.Settings, logger *log.Logger) (group []*profile.Server, addrs []string, ok bool) {
+	if !settings.Balance || srv.IsFullTunnel() {
+		return nil, nil, false
+	}
+	for _, s := range lib.AllServers() {
+		if s.SubID == srv.SubID && !s.IsFullTunnel() {
+			group = append(group, s)
+		}
+	}
+	if len(group) < 2 {
+		logger.Printf("балансировка: в группе меньше двух серверов, подключаю напрямую")
+		return nil, nil, false
+	}
+	if settings.Mode != "tun" {
+		return group, nil, true
+	}
+	addrs = make([]string, len(group))
+	var (
+		mu sync.Mutex
+		f  error
+		wg sync.WaitGroup
+	)
+	for i, s := range group {
+		wg.Add(1)
+		go func(i int, s *profile.Server) {
+			defer wg.Done()
+			ip, err := Resolve(s.Address)
+			if err != nil {
+				mu.Lock()
+				f = errors.Join(f, fmt.Errorf("%s: %w", s.Address, err))
+				mu.Unlock()
+				return
+			}
+			addrs[i] = ip
+		}(i, s)
+	}
+	wg.Wait()
+	if f != nil {
+		logger.Printf("балансировка: не удалось разрешить адреса (%v), подключаю напрямую", f)
+		return nil, nil, false
+	}
+	return group, addrs, true
 }
 
 // StartEngine launches everything needed for srv in settings.Mode: the
@@ -235,54 +289,11 @@ func StartEngine(lib *Library, srv *profile.Server, settings store.Settings, dir
 	}
 
 	// Balance spreads the connections across the servers of the selected
-	// one's subscription. Full tunnels cannot be balanced: each needs its
-	// own bridge, so the group is restricted to Xray-native protocols.
-	if settings.Balance && !srv.IsFullTunnel() {
-		var group []*profile.Server
-		for _, s := range lib.AllServers() {
-			if s.SubID == srv.SubID && !s.IsFullTunnel() {
-				group = append(group, s)
-			}
-		}
-		if len(group) < 2 {
-			logger.Printf("балансировка: в группе меньше двух серверов, подключаю напрямую")
-		} else {
-			var addrs []string
-			if settings.Mode == "tun" {
-				// Once TUN is up the system DNS goes into the tunnel, so
-				// every balanced server is resolved beforehand, in parallel.
-				addrs = make([]string, len(group))
-				var (
-					mu sync.Mutex
-					f  error
-					wg sync.WaitGroup
-				)
-				for i, s := range group {
-					wg.Add(1)
-					go func(i int, s *profile.Server) {
-						defer wg.Done()
-						ip, err := Resolve(s.Address)
-						if err != nil {
-							mu.Lock()
-							f = errors.Join(f, fmt.Errorf("%s: %w", s.Address, err))
-							mu.Unlock()
-							return
-						}
-						addrs[i] = ip
-					}(i, s)
-				}
-				wg.Wait()
-				if f != nil {
-					logger.Printf("балансировка: не удалось разрешить адреса (%v), подключаю напрямую", f)
-					addrs = nil
-				}
-			}
-			if addrs != nil {
-				opts.Balance = group
-				opts.BalanceAddrs = addrs
-				e.Bypass = append(e.Bypass, addrs...)
-			}
-		}
+	// one's subscription.
+	if group, addrs, ok := balanceGroup(lib, srv, settings, logger); ok {
+		opts.Balance = group
+		opts.BalanceAddrs = addrs // empty in proxy mode: the names are used as is
+		e.Bypass = append(e.Bypass, addrs...)
 	}
 
 	cfg, err := xray.BuildConfig(srv, opts)

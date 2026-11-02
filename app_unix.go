@@ -38,15 +38,12 @@ func (a *App) prepareTUN(srv *profile.Server, serverIP string, opts *xray.Option
 
 // activateTUN starts the privileged helper (the system asks for the
 // administrator password), which routes all traffic into the client's
-// SOCKS inbound.
-func (a *App) activateTUN(serverIP string, settings store.Settings) (tunSession, error) {
+// SOCKS inbound. bypass are the tunnel endpoints that stay reachable
+// around it.
+func (a *App) activateTUN(bypass []string, settings store.Settings) (tunSession, error) {
 	dns := "1.1.1.1"
 	if len(settings.DNS) > 0 {
 		dns = settings.DNS[0]
-	}
-	var bypass []string
-	if serverIP != "" {
-		bypass = append(bypass, serverIP)
 	}
 	sess, err := tunhelper.Start(context.Background(), tunhelper.Config{
 		SocksPort: settings.SocksPort,
@@ -56,6 +53,26 @@ func (a *App) activateTUN(serverIP string, settings store.Settings) (tunSession,
 	})
 	if err != nil {
 		return nil, err // not a nil *Session wrapped in a non-nil interface
+	}
+	return sess, nil
+}
+
+// startBlockSession is the kill switch on macOS and Linux: the privileged
+// helper stays up, but its Xray drops everything into a black hole instead
+// of forwarding it to the client.
+func (a *App) startBlockSession(settings store.Settings) (blockSession, error) {
+	dns := "1.1.1.1"
+	if len(settings.DNS) > 0 {
+		dns = settings.DNS[0]
+	}
+	sess, err := tunhelper.Start(context.Background(), tunhelper.Config{
+		SocksPort: settings.SocksPort,
+		DNS:       dns,
+		Block:     true,
+		Logf:      a.log.Printf,
+	})
+	if err != nil {
+		return nil, err
 	}
 	return sess, nil
 }

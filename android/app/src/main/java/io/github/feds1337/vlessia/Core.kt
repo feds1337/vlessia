@@ -45,6 +45,8 @@ object Core : Host {
     private const val TAG = "Vlessia"
     private const val UPDATE_CHANNEL = "updates"
     private const val UPDATE_NOTIFICATION_ID = 2
+    private const val ALERT_CHANNEL = "alerts"
+    private const val ALERT_NOTIFICATION_ID = 3
 
     lateinit var context: Context
         private set
@@ -117,6 +119,38 @@ object Core : Host {
     override fun openTun(dns: String): Int = VlessiaVpnService.establish(context, dns)
 
     override fun tunClosed() = VlessiaVpnService.stop()
+
+    /** A reminder from the core: traffic left, subscription expiry. */
+    override fun notify(title: String, text: String) {
+        main.post {
+            val nm = context.getSystemService(NotificationManager::class.java) ?: return@post
+            if (Build.VERSION.SDK_INT >= 26 && nm.getNotificationChannel(ALERT_CHANNEL) == null) {
+                nm.createNotificationChannel(
+                    NotificationChannel(ALERT_CHANNEL, "Уведомления", NotificationManager.IMPORTANCE_HIGH)
+                )
+            }
+            val openApp = PendingIntent.getActivity(
+                context, 4,
+                Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
+                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+            )
+            @Suppress("DEPRECATION")
+            val builder = if (Build.VERSION.SDK_INT >= 26) {
+                Notification.Builder(context, ALERT_CHANNEL)
+            } else {
+                Notification.Builder(context)
+            }
+            val notification = builder
+                .setSmallIcon(R.drawable.ic_shield)
+                .setColor(context.getColor(R.color.lagoon))
+                .setContentTitle(title)
+                .setContentText(text)
+                .setContentIntent(openApp)
+                .setAutoCancel(true)
+                .build()
+            runCatching { nm.notify(ALERT_NOTIFICATION_ID, notification) }
+        }
+    }
 
     override fun openURL(url: String) {
         runCatching {

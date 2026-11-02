@@ -420,6 +420,7 @@ textarea { height: auto; padding: 10px; resize: vertical; font: 12.5px/1.5 var(-
 .row-name { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .row-meta { color: var(--muted); font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .row-meta .proto { color: var(--ink); opacity: .75; margin-right: 8px; }
+.row-meta .via-mini { color: var(--lagoon); }
 
 .ping { flex: none; min-width: 44px; text-align: right; font-size: 13px; font-variant-numeric: tabular-nums; color: var(--muted); }
 .ping.good { color: var(--lagoon); }

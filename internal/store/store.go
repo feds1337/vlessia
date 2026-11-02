@@ -32,6 +32,11 @@ type Subscription struct {
 	Expire         int64  `json:"expire"` // unix seconds, 0 = never
 
 	LastError string `json:"lastError"`
+
+	// Notified: which alerts have already been sent for this subscription
+	// (a bitmask of core.Remind* bits), so a warning is shown once and
+	// again only after its condition clears.
+	Notified int `json:"notified,omitempty"`
 }
 
 type Settings struct {
@@ -70,6 +75,16 @@ type Settings struct {
 	// ProxyRules win over DirectRules and over BypassRU.
 	DirectRules []string `json:"directRules"`
 	ProxyRules  []string `json:"proxyRules"`
+
+	// KillSwitch keeps the TUN adapter up while the VPN is disconnected and
+	// sends all traffic into a black hole, so nothing leaks. It only works
+	// where an adapter exists: TUN mode on desktop, always on Android.
+	KillSwitch bool `json:"killSwitch"`
+
+	// Balance spreads the new connections across all the servers of the
+	// selected server's subscription (Xray balancing, round-robin) instead
+	// of using a single one. Full-tunnel protocols cannot be balanced.
+	Balance bool `json:"balance"`
 }
 
 // Traffic counts the bytes passed through the VPN on one day.

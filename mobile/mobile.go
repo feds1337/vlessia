@@ -52,6 +52,8 @@ type Host interface {
 	InstallPackage(path string)
 	// OpenVpnSettings opens the system VPN settings (always-on VPN).
 	OpenVpnSettings()
+	// Notify shows a system notification (traffic, subscription expiry).
+	Notify(title, text string)
 }
 
 var (
@@ -91,10 +93,15 @@ func Start(dataDir, version, abi string, host Host) error {
 		abi:     abi,
 		status:  connStatus{State: "disconnected"},
 	}
-	a.lib = &core.Library{Store: st, Log: logger, HTTP: a.httpClient, Changed: a.emitState}
+	a.lib = &core.Library{Store: st, Log: logger, HTTP: a.httpClient, Changed: a.emitState, Remind: a.remind}
 	a.lib.UpgradeServers()
 	go a.lib.AutoUpdateLoop()
 	go a.updateLoop()
+	// First traffic/expiry check a little after start.
+	go func() {
+		time.Sleep(5 * time.Second)
+		a.lib.CheckReminders()
+	}()
 	app = a
 	return nil
 }
@@ -222,6 +229,22 @@ func ServerName() string {
 	return ""
 }
 
+// KillSwitch reports whether the kill switch is active right now: the
+// switch is on and the VPN interface is kept up while the VPN is off. The
+// VPN service uses it to keep the interface (and thus the blocking) alive.
+func KillSwitch() bool {
+	a, err := get()
+	if err != nil {
+		return false
+	}
+	var on bool
+	a.store.Read(func(d *store.Data) { on = d.Settings.KillSwitch })
+	a.mu.Lock()
+	hasFd := a.tunFd != 0
+	a.mu.Unlock()
+	return on && hasFd
+}
+
 // AutoConnect reports whether the user asked to connect when the app opens.
 func AutoConnect() bool {
 	a, err := get()
@@ -254,6 +277,9 @@ type connStatus struct {
 	Error     string `json:"error"`
 	Admin     bool   `json:"admin"`
 	Interface string `json:"interface"`
+	// Kill: the kill switch keeps the VPN interface up and blocks the
+	// internet while the VPN is off.
+	Kill bool `json:"kill"`
 }
 
 type appState struct {
@@ -284,6 +310,10 @@ type client struct {
 	eng       *core.Engine
 	status    connStatus
 	stopStats chan struct{}
+	// tunFd is the VPN interface descriptor. It outlives a connection
+	// while the kill switch is on, so that the internet stays blocked
+	// (Android drops everything that enters an unread VPN interface).
+	tunFd int32
 }
 
 func (a *client) emit(name string, v any) {
@@ -318,8 +348,8 @@ func (a *client) GetState() appState {
 	return s
 }
 
-func (a *client) GetVersion() string          { return a.version }
-func (a *client) GetPlatform() string         { return "android" }
+func (a *client) GetVersion() string           { return a.version }
+func (a *client) GetPlatform() string          { return "android" }
 func (a *client) GetTraffic() core.TrafficInfo { return a.meter.Info() }
 
 // ---------- servers & subscriptions ----------
@@ -369,10 +399,38 @@ func (a *client) SetOpenVPNCredentials(id, user, pass string) error {
 func (a *client) AddSubscription(name, rawURL string) (int, error) {
 	return a.lib.AddSubscription(name, rawURL)
 }
-func (a *client) DeleteSubscription(id string) error         { return a.lib.DeleteSubscription(id) }
-func (a *client) UpdateSubscription(id string) (int, error)  { return a.lib.UpdateSubscription(id) }
-func (a *client) RenameSubscription(id, name string) error   { return a.lib.RenameSubscription(id, name) }
-func (a *client) UpdateAllSubscriptions() error              { return a.lib.UpdateAllSubscriptions() }
+func (a *client) DeleteSubscription(id string) error        { return a.lib.DeleteSubscription(id) }
+func (a *client) UpdateSubscription(id string) (int, error) { return a.lib.UpdateSubscription(id) }
+func (a *client) RenameSubscription(id, name string) error  { return a.lib.RenameSubscription(id, name) }
+func (a *client) UpdateAllSubscriptions() error             { return a.lib.UpdateAllSubscriptions() }
+
+// SetServerVia sets (or clears with an empty via) the relay server of a
+// multi-tunnel chain.
+func (a *client) SetServerVia(id, via string) error {
+	if via != "" {
+		if via == id || a.store.Server(via) == nil {
+			return errors.New("сервер для цепочки не найден")
+		}
+	}
+	err := a.store.Update(func(d *store.Data) {
+		for _, s := range d.Servers {
+			if s.ID == id {
+				s.Via = via
+			}
+		}
+	})
+	if err != nil {
+		return err
+	}
+	a.lib.ChangedNow()
+	var selected bool
+	a.store.Read(func(d *store.Data) { selected = d.Selected == id })
+	if selected && a.engine() != nil {
+		return a.reconnectIfActive()
+	}
+	return nil
+}
+
 func (a *client) OpenURL(u string)                           { a.host.OpenURL(u) }
 func (a *client) OpenVpnSettings()                           { a.host.OpenVpnSettings() }
 func (a *client) GetLogs() string                            { return core.Logs(a.store.Dir()) }
@@ -410,8 +468,19 @@ func (a *client) SaveSettings(s store.Settings) error {
 		return err
 	}
 	a.emitState()
+	// Turning the kill switch off releases a blocked interface right away.
+	if old.KillSwitch && !s.KillSwitch {
+		a.mu.Lock()
+		fd, eng := a.tunFd, a.eng
+		a.mu.Unlock()
+		if eng == nil && fd != 0 {
+			a.endTun(fd)
+			a.setStatus(func(s *connStatus) { *s = connStatus{State: "disconnected"} })
+		}
+	}
 	if old.SocksPort == s.SocksPort && old.HTTPPort == s.HTTPPort && old.BypassRU == s.BypassRU &&
-		old.LogLevel == s.LogLevel && strings.Join(old.DNS, ",") == strings.Join(s.DNS, ",") &&
+		old.LogLevel == s.LogLevel && old.Balance == s.Balance &&
+		strings.Join(old.DNS, ",") == strings.Join(s.DNS, ",") &&
 		strings.Join(old.DirectRules, "|") == strings.Join(s.DirectRules, "|") &&
 		strings.Join(old.ProxyRules, "|") == strings.Join(s.ProxyRules, "|") {
 		return nil
@@ -430,6 +499,10 @@ func cleanRules(lines []string) []string {
 }
 
 func (a *client) SetMode(string) error { return nil }
+
+// SetLang is a no-op on Android: there is no tray, and the web interface
+// localises itself.
+func (a *client) SetLang(string) error { return nil }
 
 // SetAutoBest turns "connect to the fastest server" on or off. Turned on
 // while connected, it reconnects to the fastest server right away.
@@ -508,9 +581,13 @@ func (a *client) Connect() error {
 	})
 	if err != nil {
 		a.log.Printf("подключение не удалось: %v", err)
+		a.mu.Lock()
+		kept := a.tunFd != 0
+		a.mu.Unlock()
 		a.setStatus(func(s *connStatus) {
 			s.State = "disconnected"
 			s.Error = err.Error()
+			s.Kill = kept
 		})
 		return err
 	}
@@ -534,36 +611,74 @@ func (a *client) Connect() error {
 
 // openTun gets the VPN interface from Android and hands it to Xray, which
 // reads its descriptor from the environment. The returned release closes
-// the interface, which takes the VPN down.
+// the interface, which takes the VPN down; with the kill switch on it is
+// kept instead, so the internet stays blocked.
 func (a *client) openTun(dnsServers []string) (func(), error) {
-	dns := "1.1.1.1"
-	for _, d := range dnsServers {
-		if net.ParseIP(d) != nil {
-			dns = d
-			break
+	a.mu.Lock()
+	fd := a.tunFd
+	a.mu.Unlock()
+	if fd == 0 {
+		dns := "1.1.1.1"
+		for _, d := range dnsServers {
+			if net.ParseIP(d) != nil {
+				dns = d
+				break
+			}
 		}
-	}
-	fd, err := a.host.OpenTun(dns)
-	if err != nil {
-		a.host.TunClosed()
-		return nil, err
-	}
+		var err error
+		fd, err = a.host.OpenTun(dns)
+		if err != nil {
+			a.host.TunClosed()
+			return nil, err
+		}
+	} // else: the kill switch kept the interface of the blocked state
 	_ = os.Setenv("xray.tun.fd", strconv.Itoa(int(fd)))
+	a.mu.Lock()
+	a.tunFd = fd
+	a.mu.Unlock()
 	return func() {
-		// Xray does not close the descriptor it was given.
-		closeFD(int(fd))
-		a.host.TunClosed()
+		if a.killSwitchOn() {
+			return // keep the interface: nothing may leak while the VPN is off
+		}
+		a.endTun(fd)
 	}, nil
+}
+
+// killSwitchOn reports whether the kill switch is enabled in the settings.
+func (a *client) killSwitchOn() bool {
+	var on bool
+	a.store.Read(func(d *store.Data) { on = d.Settings.KillSwitch })
+	return on
+}
+
+// endTun closes the VPN interface and takes the VPN down.
+func (a *client) endTun(fd int32) {
+	a.mu.Lock()
+	if a.tunFd != fd {
+		a.mu.Unlock()
+		return // already closed
+	}
+	a.tunFd = 0
+	a.mu.Unlock()
+	// Xray does not close the descriptor it was given.
+	closeFD(int(fd))
+	a.host.TunClosed()
 }
 
 func (a *client) Disconnect() error {
 	a.opMu.Lock()
 	defer a.opMu.Unlock()
 	a.mu.Lock()
-	eng, stop := a.eng, a.stopStats
+	eng, stop, fd := a.eng, a.stopStats, a.tunFd
 	a.eng = nil
 	a.mu.Unlock()
 	if eng == nil {
+		// No connection: this ends the kill switch's blocked state.
+		if fd != 0 {
+			a.endTun(fd)
+			a.log.Printf("kill switch: блокировка снята")
+			a.setStatus(func(s *connStatus) { *s = connStatus{State: "disconnected"} })
+		}
 		return nil
 	}
 	a.setStatus(func(s *connStatus) { s.State = "disconnecting" })
@@ -571,7 +686,17 @@ func (a *client) Disconnect() error {
 	close(stop)
 	err := eng.Close()
 	a.log.Printf("отключено за %v", time.Since(started).Round(time.Millisecond))
-	a.setStatus(func(s *connStatus) { *s = connStatus{State: "disconnected"} })
+	a.mu.Lock()
+	kept := a.tunFd != 0
+	a.mu.Unlock()
+	if kept {
+		// The kill switch kept the interface; Android drops everything
+		// that enters it, so nothing leaks.
+		a.log.Printf("kill switch: VPN отключён, интернет заблокирован")
+		a.setStatus(func(s *connStatus) { *s = connStatus{State: "disconnected", Kill: true} })
+	} else {
+		a.setStatus(func(s *connStatus) { *s = connStatus{State: "disconnected"} })
+	}
 	return err
 }
 
@@ -683,4 +808,10 @@ func (a *client) recoverConnection(dead *core.Engine) {
 func (a *client) notice(text string) {
 	a.log.Printf("%s", text)
 	a.emit("notice", text)
+}
+
+// remind is the Library.Remind callback: a toast and a system notification.
+func (a *client) remind(text string) {
+	a.notice(text)
+	a.host.Notify("Vlessia", text)
 }

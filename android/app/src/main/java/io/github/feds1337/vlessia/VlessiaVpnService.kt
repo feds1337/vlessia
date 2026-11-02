@@ -69,11 +69,19 @@ class VlessiaVpnService : VpnService() {
         fun onState(state: String) {
             main.post {
                 when (state) {
-                    // A reconnect passes through "disconnected"; only stop if
-                    // nothing reconnects shortly.
-                    "disconnected" -> main.postDelayed({
-                        if (Core.state == "disconnected") instance?.finish()
-                    }, 1500)
+                    "disconnected" -> {
+                        if (Mobile.killSwitch()) {
+                            // Kill switch: the interface is kept up, so the
+                            // service must stay with it; traffic is blocked.
+                            instance?.notifyState("blocked")
+                        } else {
+                            // A reconnect passes through "disconnected"; only
+                            // stop if nothing reconnects shortly.
+                            main.postDelayed({
+                                if (Core.state == "disconnected") instance?.finish()
+                            }, 1500)
+                        }
+                    }
                     else -> instance?.notifyState(state)
                 }
             }
@@ -166,6 +174,7 @@ class VlessiaVpnService : VpnService() {
             when (state) {
                 "connected" -> R.string.state_connected
                 "disconnecting" -> R.string.state_disconnecting
+                "blocked" -> R.string.state_blocked
                 else -> R.string.state_connecting
             }
         )

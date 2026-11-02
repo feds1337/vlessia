@@ -13,6 +13,62 @@ import (
 	"github.com/feds1337/vlessia/internal/store"
 )
 
+// trayLabels are the menu strings; the tray follows the UI language.
+type trayLabels struct {
+	tooltipOff        string
+	tooltipOn         string
+	tooltipConnecting string
+	tooltipOffing     string
+	statusOff         string
+	statusOn          string
+	statusConnecting  string
+	statusOffing      string
+	installUpdate     string // plus the version
+	open              string
+	connect           string
+	disconnect        string
+	proxyMode         string
+	tunMode           string
+	quit              string
+}
+
+var (
+	trayRu = trayLabels{
+		tooltipOff:        "Vlessia — отключено",
+		tooltipOn:         "Vlessia — подключено",
+		tooltipConnecting: "Vlessia — подключение…",
+		tooltipOffing:     "Vlessia — отключение…",
+		statusOff:         "Отключено",
+		statusOn:          "Подключено",
+		statusConnecting:  "Подключение…",
+		statusOffing:      "Отключение…",
+		installUpdate:     "Установить обновление",
+		open:              "Открыть",
+		connect:           "Подключить",
+		disconnect:        "Отключить",
+		proxyMode:         "Системный прокси",
+		tunMode:           "TUN (весь трафик)",
+		quit:              "Выход",
+	}
+	trayEn = trayLabels{
+		tooltipOff:        "Vlessia — disconnected",
+		tooltipOn:         "Vlessia — connected",
+		tooltipConnecting: "Vlessia — connecting…",
+		tooltipOffing:     "Vlessia — disconnecting…",
+		statusOff:         "Disconnected",
+		statusOn:          "Connected",
+		statusConnecting:  "Connecting…",
+		statusOffing:      "Disconnecting…",
+		installUpdate:     "Install update",
+		open:              "Open",
+		connect:           "Connect",
+		disconnect:        "Disconnect",
+		proxyMode:         "System proxy",
+		tunMode:           "TUN (all traffic)",
+		quit:              "Quit",
+	}
+)
+
 // Tray is the notification-area icon with a quick-access menu.
 type Tray struct {
 	app      *App
@@ -26,11 +82,12 @@ type Tray struct {
 	mStatus  *systray.MenuItem
 	mUpdate  *systray.MenuItem
 
-	mu          sync.Mutex
-	lastState   string
-	lastMode    string
+	mu           sync.Mutex
+	labels       trayLabels
+	lastState    string
+	lastMode     string
 	lastUpdState string
-	lastUpdVer  string
+	lastUpdVer   string
 }
 
 func StartTray(app *App) *Tray {
@@ -40,6 +97,7 @@ func StartTray(app *App) *Tray {
 		iconOn:   makeIcon(color.RGBA{0x0e, 0x7c, 0x86, 0xff}),
 		iconOff:  makeIcon(color.RGBA{0x6b, 0x72, 0x80, 0xff}),
 		iconWait: makeIcon(color.RGBA{0xc2, 0x7c, 0x0e, 0xff}),
+		labels:   trayRu,
 	}
 	// systray creates a Win32 window and runs GetMessageW on the calling
 	// thread, but only calls LockOSThread in init() (the main goroutine).
@@ -53,22 +111,23 @@ func StartTray(app *App) *Tray {
 }
 
 func (t *Tray) onReady() {
+	l := t.labels
 	systray.SetIcon(t.iconOff)
-	systray.SetTooltip("Vlessia — отключено")
+	systray.SetTooltip(l.tooltipOff)
 	systray.SetOnTapped(func() { go t.app.ShowWindow() })
 
-	t.mStatus = systray.AddMenuItem("Отключено", "")
+	t.mStatus = systray.AddMenuItem(l.statusOff, "")
 	t.mStatus.Disable()
-	t.mUpdate = systray.AddMenuItem("Установить обновление", "")
+	t.mUpdate = systray.AddMenuItem(l.installUpdate, "")
 	t.mUpdate.Hide()
 	systray.AddSeparator()
-	mShow := systray.AddMenuItem("Открыть", "")
-	t.mToggle = systray.AddMenuItem("Подключить", "")
+	mShow := systray.AddMenuItem(l.open, "")
+	t.mToggle = systray.AddMenuItem(l.connect, "")
 	systray.AddSeparator()
-	t.mProxy = systray.AddMenuItemCheckbox("Системный прокси", "", true)
-	t.mTun = systray.AddMenuItemCheckbox("TUN (весь трафик)", "", false)
+	t.mProxy = systray.AddMenuItemCheckbox(l.proxyMode, "", true)
+	t.mTun = systray.AddMenuItemCheckbox(l.tunMode, "", false)
 	systray.AddSeparator()
-	mQuit := systray.AddMenuItem("Выход", "")
+	mQuit := systray.AddMenuItem(l.quit, "")
 
 	var mode string
 	t.app.store.Read(func(d *store.Data) { mode = d.Settings.Mode })
@@ -129,6 +188,34 @@ func (t *Tray) setModeChecks(mode string) {
 	}
 }
 
+// stateTitles applies the current state to the icon, tooltip and the
+// status / toggle items. t.mu must be held.
+func (t *Tray) stateTitles() {
+	l := t.labels
+	switch t.lastState {
+	case "connected":
+		systray.SetIcon(t.iconOn)
+		systray.SetTooltip(l.tooltipOn)
+		t.mStatus.SetTitle(l.statusOn)
+		t.mToggle.SetTitle(l.disconnect)
+	case "disconnecting":
+		systray.SetIcon(t.iconWait)
+		systray.SetTooltip(l.tooltipOffing)
+		t.mStatus.SetTitle(l.statusOffing)
+		t.mToggle.SetTitle(l.connect)
+	case "connecting":
+		systray.SetIcon(t.iconWait)
+		systray.SetTooltip(l.tooltipConnecting)
+		t.mStatus.SetTitle(l.statusConnecting)
+		t.mToggle.SetTitle(l.disconnect)
+	default:
+		systray.SetIcon(t.iconOff)
+		systray.SetTooltip(l.tooltipOff)
+		t.mStatus.SetTitle(l.statusOff)
+		t.mToggle.SetTitle(l.connect)
+	}
+}
+
 // Update reflects the connection status in the tray.
 func (t *Tray) Update(st Status) {
 	select {
@@ -149,29 +236,7 @@ func (t *Tray) Update(st Status) {
 		return
 	}
 	t.lastState = st.State
-
-	switch st.State {
-	case "connected":
-		systray.SetIcon(t.iconOn)
-		systray.SetTooltip("Vlessia — подключено")
-		t.mStatus.SetTitle("Подключено")
-		t.mToggle.SetTitle("Отключить")
-	case "disconnecting":
-		systray.SetIcon(t.iconWait)
-		systray.SetTooltip("Vlessia — отключение…")
-		t.mStatus.SetTitle("Отключение…")
-		t.mToggle.SetTitle("Подключить")
-	case "connecting":
-		systray.SetIcon(t.iconWait)
-		systray.SetTooltip("Vlessia — подключение…")
-		t.mStatus.SetTitle("Подключение…")
-		t.mToggle.SetTitle("Отключить")
-	default:
-		systray.SetIcon(t.iconOff)
-		systray.SetTooltip("Vlessia — отключено")
-		t.mStatus.SetTitle("Отключено")
-		t.mToggle.SetTitle("Подключить")
-	}
+	t.stateTitles()
 }
 
 // SetUpdate shows the update item while a new version is available.
@@ -189,10 +254,43 @@ func (t *Tray) SetUpdate(info UpdateInfo) {
 	t.lastUpdState = info.State
 	t.lastUpdVer = info.Latest
 	if info.State == "available" {
-		t.mUpdate.SetTitle("Установить обновление " + info.Latest)
+		t.mUpdate.SetTitle(t.labels.installUpdate + " " + info.Latest)
 		t.mUpdate.Show()
 	} else {
 		t.mUpdate.Hide()
+	}
+}
+
+// SetLang switches the menu language and re-applies the current titles.
+// The ready channel is waited on because the items exist only after the
+// systray loop starts.
+func (t *Tray) SetLang(lang string) {
+	t.mu.Lock()
+	labels := trayRu
+	if lang == "en" {
+		labels = trayEn
+	}
+	t.labels = labels
+	if !t.readyClosed() {
+		t.mu.Unlock()
+		<-t.ready
+		t.mu.Lock()
+		defer t.mu.Unlock()
+	}
+	t.mProxy.SetTitle(labels.proxyMode)
+	t.mTun.SetTitle(labels.tunMode)
+	if t.lastUpdState == "available" {
+		t.mUpdate.SetTitle(labels.installUpdate + " " + t.lastUpdVer)
+	}
+	t.stateTitles()
+}
+
+func (t *Tray) readyClosed() bool {
+	select {
+	case <-t.ready:
+		return true
+	default:
+		return false
 	}
 }
 

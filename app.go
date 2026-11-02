@@ -67,6 +67,9 @@ type Status struct {
 	Error     string `json:"error"`
 	Admin     bool   `json:"admin"`
 	Interface string `json:"interface"`
+	// Kill is true while the kill switch blocks the internet: the TUN
+	// adapter is up, but the VPN is off and everything goes to a black hole.
+	Kill bool `json:"kill"`
 }
 
 type AppState struct {
@@ -104,8 +107,17 @@ type App struct {
 	mu        sync.Mutex   // guards the fields below
 	eng       *core.Engine // the running connection, if any
 	tunSess   tunSession   // system side of TUN mode, if any
+	blockSess blockSession // kill switch: TUN up, everything blocked, if any
 	status    Status
 	stopStats chan struct{}
+}
+
+// blockSession keeps the TUN adapter up and blocks all internet traffic
+// (the kill switch). It is platform-specific: a local Xray in block mode
+// on Windows, the privileged helper in block mode on macOS and Linux.
+type blockSession interface {
+	Close()
+	Done() <-chan struct{}
 }
 
 func NewApp(st *store.Store, logger *log.Logger) *App {
@@ -121,6 +133,7 @@ func NewApp(st *store.Store, logger *log.Logger) *App {
 
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
+	_ = runtime.InitializeNotifications(ctx)
 	a.visible.Store(!a.autostarted)
 	a.restoreLeftoverProxy()
 	if tun.IsAdmin() {
@@ -133,15 +146,28 @@ func (a *App) startup(ctx context.Context) {
 		_ = a.Disconnect()
 	}()
 	a.lib.UpgradeServers()
+	a.lib.Remind = a.remind
 	a.tray = StartTray(a)
 	go a.lib.AutoUpdateLoop()
 	go a.updateLoop()
 	a.refreshAutostart()
-	var autoConnect bool
-	a.store.Read(func(d *store.Data) { autoConnect = d.Settings.AutoConnect })
+	var autoConnect, kill, tunMode bool
+	a.store.Read(func(d *store.Data) {
+		autoConnect = d.Settings.AutoConnect
+		kill = d.Settings.KillSwitch
+		tunMode = d.Settings.Mode == "tun"
+	})
 	if a.connectOnStart || autoConnect {
 		go a.autoConnect()
+	} else if kill && tunMode {
+		// No VPN on start: the kill switch blocks the internet until one.
+		go a.syncKill()
 	}
+	// First traffic/expiry check a little after start, once the UI is up.
+	go func() {
+		time.Sleep(5 * time.Second)
+		a.lib.CheckReminders()
+	}()
 }
 
 // autoConnect connects at startup. Right after Windows logon the network
@@ -160,6 +186,8 @@ func (a *App) autoConnect() {
 		time.Sleep(5 * time.Second)
 	}
 	a.log.Printf("автоподключение не удалось: %v", err)
+	// No VPN: the kill switch blocks the internet instead of leaking.
+	a.syncKill()
 	// Started hidden in the tray: show why it did not connect.
 	a.ShowWindow()
 }
@@ -221,6 +249,15 @@ func (a *App) beforeClose(ctx context.Context) bool {
 }
 
 func (a *App) shutdown(ctx context.Context) {
+	runtime.CleanupNotifications(ctx)
+	a.quitting = true
+	a.mu.Lock()
+	bs := a.blockSess
+	a.blockSess = nil
+	a.mu.Unlock()
+	if bs != nil {
+		bs.Close()
+	}
 	_ = a.Disconnect()
 	a.meter.Flush()
 	a.tray.Stop()
@@ -395,6 +432,43 @@ func (a *App) OpenURL(u string) {
 
 func (a *App) UpdateAllSubscriptions() error { return a.lib.UpdateAllSubscriptions() }
 
+// SetServerVia sets (or clears with an empty via) the relay server of a
+// multi-tunnel chain. If the changed server is the selected one and the
+// client is connected, it reconnects with the new chain.
+func (a *App) SetServerVia(id, via string) error {
+	if via != "" {
+		if via == id || a.store.Server(via) == nil {
+			return errors.New("сервер для цепочки не найден")
+		}
+	}
+	err := a.store.Update(func(d *store.Data) {
+		for _, s := range d.Servers {
+			if s.ID == id {
+				s.Via = via
+			}
+		}
+	})
+	if err != nil {
+		return err
+	}
+	a.lib.ChangedNow()
+	var selected, connected bool
+	a.store.Read(func(d *store.Data) { selected = d.Selected == id })
+	connected = a.instance() != nil
+	if selected && connected {
+		return a.reconnectIfActive()
+	}
+	return nil
+}
+
+// SetLang applies the UI language to the native parts (tray menu on
+// Windows and Linux). The web interface localises itself.
+func (a *App) SetLang(lang string) {
+	if a.tray != nil {
+		a.tray.SetLang(lang)
+	}
+}
+
 // ---------- settings ----------
 
 func (a *App) SaveSettings(s store.Settings) error {
@@ -426,9 +500,18 @@ func (a *App) SaveSettings(s store.Settings) error {
 		a.applyWindowTheme(s.Theme)
 	}
 	if !affectsConnection(old, s) {
+		if a.instance() == nil {
+			a.syncKill() // kill switch / mode toggled while disconnected
+		}
 		return nil
 	}
-	return a.reconnectIfActive()
+	if err := a.reconnectIfActive(); err != nil {
+		return err
+	}
+	if a.instance() == nil {
+		a.syncKill()
+	}
+	return nil
 }
 
 // applyWindowTheme switches the window's title bar (Windows only) to the
@@ -451,7 +534,8 @@ func (a *App) applyWindowTheme(theme string) {
 // reconnecting; sound, autostart or update options do not.
 func affectsConnection(a, b store.Settings) bool {
 	return a.Mode != b.Mode || a.SocksPort != b.SocksPort || a.HTTPPort != b.HTTPPort ||
-		a.BypassRU != b.BypassRU || a.LogLevel != b.LogLevel || strings.Join(a.DNS, ",") != strings.Join(b.DNS, ",") ||
+		a.BypassRU != b.BypassRU || a.LogLevel != b.LogLevel || a.Balance != b.Balance ||
+		strings.Join(a.DNS, ",") != strings.Join(b.DNS, ",") ||
 		strings.Join(a.DirectRules, "|") != strings.Join(b.DirectRules, "|") ||
 		strings.Join(a.ProxyRules, "|") != strings.Join(b.ProxyRules, "|")
 }
@@ -486,6 +570,87 @@ func (a *App) RestartAsAdmin() error {
 	return nil
 }
 
+// ---------- kill switch ----------
+
+// syncKill reconciles the kill switch with the current state: it keeps a
+// block session up while the VPN is off in TUN mode, and tears it down
+// otherwise. It is called from the state changes, never from the UI
+// directly.
+func (a *App) syncKill() { a.syncKillFrom("") }
+
+// syncKillFrom is syncKill with the mode the last connection ran in:
+// full-tunnel servers use TUN even when the settings mode is proxy, and
+// the kill switch must cover their disconnect too.
+func (a *App) syncKillFrom(lastMode string) {
+	if a.quitting {
+		return
+	}
+	var want bool
+	a.store.Read(func(d *store.Data) {
+		want = d.Settings.KillSwitch && (d.Settings.Mode == "tun" || lastMode == "tun")
+	})
+	a.mu.Lock()
+	hasEng, bs := a.eng != nil, a.blockSess
+	a.mu.Unlock()
+	if !want || hasEng {
+		if bs != nil {
+			a.stopBlock(bs)
+		}
+		return
+	}
+	if bs == nil {
+		var err error
+		var settings store.Settings
+		a.store.Read(func(d *store.Data) { settings = d.Settings })
+		bs, err = a.startBlockSession(settings)
+		if err != nil {
+			a.log.Printf("kill switch: %v", err)
+			if errors.Is(err, ErrNeedAdmin) {
+				a.notice("Kill switch работает только в режиме «Весь трафик», для него нужны права администратора")
+			}
+			return
+		}
+		a.mu.Lock()
+		if !a.quitting {
+			a.blockSess = bs
+		}
+		a.mu.Unlock()
+		a.log.Printf("kill switch: адаптер включён, интернет заблокирован")
+		a.setStatus(func(s *Status) { s.Kill = true })
+		if ch := bs.Done(); ch != nil {
+			go a.watchBlock(bs)
+		}
+	}
+}
+
+// stopBlock tears the block session down.
+func (a *App) stopBlock(bs blockSession) {
+	a.mu.Lock()
+	if a.blockSess == bs {
+		a.blockSess = nil
+	}
+	a.mu.Unlock()
+	bs.Close()
+	a.log.Printf("kill switch: блокировка снята")
+	a.setStatus(func(s *Status) { s.Kill = false })
+}
+
+// watchBlock notices when the block session dies behind the client's back
+// (e.g. the helper was killed) and reports it: without the adapter the
+// traffic would leak.
+func (a *App) watchBlock(bs blockSession) {
+	<-bs.Done()
+	a.mu.Lock()
+	current := a.blockSess == bs
+	a.mu.Unlock()
+	if !current || a.quitting {
+		return
+	}
+	a.log.Printf("kill switch: блокировка остановлена системой")
+	a.stopBlock(bs)
+	a.notice("Kill switch: блокировка интернета остановлена, VPN выключен")
+}
+
 // ---------- connection ----------
 
 func (a *App) Toggle() error {
@@ -517,6 +682,13 @@ func (a *App) Connect() error {
 	if a.instance() != nil {
 		return nil
 	}
+	// The kill switch is off as soon as a real connection is starting.
+	a.mu.Lock()
+	bs := a.blockSess
+	a.mu.Unlock()
+	if bs != nil {
+		a.stopBlock(bs)
+	}
 
 	var settings store.Settings
 	a.store.Read(func(d *store.Data) { settings = d.Settings })
@@ -547,6 +719,11 @@ func (a *App) Connect() error {
 			s.State = "disconnected"
 			s.Error = err.Error()
 		})
+		// The attempt released the kill switch: put the block back, or the
+		// traffic would go out directly.
+		if bs != nil {
+			a.syncKillFrom(settings.Mode)
+		}
 		return err
 	}
 	stop := make(chan struct{})
@@ -592,7 +769,9 @@ func (a *App) start(srv *profile.Server, settings store.Settings) (*core.Engine,
 		return nil, nil, err
 	}
 	if settings.Mode == "tun" {
-		sess, err := a.activateTUN(eng.ServerIP, settings)
+		// Every tunnel endpoint (the server, the relay, the balanced
+		// servers) stays reachable around the tunnel.
+		sess, err := a.activateTUN(eng.Bypass, settings)
 		if err != nil {
 			_ = eng.Close()
 			return nil, nil, err
@@ -640,7 +819,12 @@ func (a *App) Disconnect() error {
 		step("очистка TUN и сброс DNS-кэша", tun.Cleanup)
 	}
 	a.log.Printf("отключено за %v", time.Since(started).Round(time.Millisecond))
-	a.setStatus(func(s *Status) { *s = Status{State: "disconnected", Admin: tun.IsAdmin()} })
+	// With the kill switch the adapter stays up and blocks everything.
+	a.syncKillFrom(mode)
+	a.mu.Lock()
+	kill := a.blockSess != nil
+	a.mu.Unlock()
+	a.setStatus(func(s *Status) { *s = Status{State: "disconnected", Admin: tun.IsAdmin(), Kill: kill} })
 	return err
 }
 
@@ -835,5 +1019,13 @@ func (a *App) notice(text string) {
 	a.log.Printf("%s", text)
 	if a.ctx != nil {
 		runtime.EventsEmit(a.ctx, "notice", text)
+	}
+}
+
+// remind is the Library.Remind callback: a system notification and a toast.
+func (a *App) remind(text string) {
+	a.notice(text)
+	if a.ctx != nil {
+		_ = runtime.SendNotification(a.ctx, runtime.NotificationOptions{Title: "Vlessia", Body: text})
 	}
 }

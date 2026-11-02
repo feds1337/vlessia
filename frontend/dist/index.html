@@ -26,34 +26,34 @@
     </div>
 
     <div class="status" aria-live="polite">
-      <p class="status-word" id="status-word">Отключено</p>
-      <p class="status-server" id="status-server">Сервер не выбран</p>
+      <p class="status-word" id="status-word" data-i18n="status.disconnected">Отключено</p>
+      <p class="status-server" id="status-server" data-i18n="dock.no_server">Сервер не выбран</p>
       <p class="status-detail" id="status-detail"></p>
       <p class="status-error" id="status-error"></p>
     </div>
 
     <dl class="meters">
-      <div><dt>Отправка</dt><dd id="up">0 Б/с</dd></div>
-      <div><dt>Получение</dt><dd id="down">0 Б/с</dd></div>
+      <div><dt data-i18n="dock.send">Отправка</dt><dd id="up">0 Б/с</dd></div>
+      <div><dt data-i18n="dock.receive">Получение</dt><dd id="down">0 Б/с</dd></div>
     </dl>
 
     <p class="totals" id="totals"></p>
 
     <div class="dock-actions">
-      <div class="mode" id="mode-seg" role="radiogroup" aria-label="Режим">
-        <button role="radio" data-mode="proxy">Прокси</button>
-        <button role="radio" data-mode="tun">Весь трафик</button>
+      <div class="mode" id="mode-seg" role="radiogroup" data-i18n-aria="dock.mode_aria" aria-label="Режим">
+        <button role="radio" data-mode="proxy" data-i18n="dock.proxy">Прокси</button>
+        <button role="radio" data-mode="tun" data-i18n="dock.tun">Весь трафик</button>
       </div>
-      <button class="toggle" id="power">Подключить</button>
-      <button class="dock-link" id="test-btn">Проверить соединение</button>
+      <button class="toggle" id="power" data-i18n="dock.connect">Подключить</button>
+      <button class="dock-link" id="test-btn" data-i18n="dock.test">Проверить соединение</button>
     </div>
 
     <div class="update" id="update-banner" hidden>
       <p id="update-text"></p>
       <div class="update-bar" id="update-bar" hidden><span id="update-progress"></span></div>
       <div class="update-actions">
-        <button class="update-go" id="update-go">Обновить</button>
-        <button class="dock-link" id="update-notes">Что нового</button>
+        <button class="update-go" id="update-go" data-i18n="dock.update">Обновить</button>
+        <button class="dock-link" id="update-notes" data-i18n="dock.whats_new">Что нового</button>
       </div>
     </div>
 
@@ -62,38 +62,38 @@
 
   <main>
     <nav class="tabs" aria-label="Разделы">
-      <button class="tab active" data-view="servers">Серверы</button>
-      <button class="tab" data-view="subs">Подписки</button>
-      <button class="tab" data-view="settings">Настройки</button>
-      <button class="tab" data-view="logs">Журнал</button>
+      <button class="tab active" data-view="servers" data-i18n="tab.servers">Серверы</button>
+      <button class="tab" data-view="subs" data-i18n="tab.subs">Подписки</button>
+      <button class="tab" data-view="settings" data-i18n="tab.settings">Настройки</button>
+      <button class="tab" data-view="logs" data-i18n="tab.logs">Журнал</button>
     </nav>
 
     <section class="view active" id="view-servers">
       <div class="bar">
         <label class="search">
           <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/></svg>
-          <input id="search" placeholder="Найти сервер" aria-label="Найти сервер">
+          <input id="search" data-i18n-ph="servers.search_ph" data-i18n-aria="servers.search_ph" placeholder="Найти сервер" aria-label="Найти сервер">
         </label>
-        <button class="btn ghost icon" id="ping-btn" title="Проверить пинг серверов" aria-label="Проверить пинг серверов">
+        <button class="btn ghost icon" id="ping-btn" data-i18n-title="servers.ping_title" data-i18n-aria="servers.ping_title" title="Проверить пинг серверов" aria-label="Проверить пинг серверов">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 18v-2M9 18v-6M14 18V9M19 18V5"/></svg>
         </button>
-        <button class="btn ghost icon" id="update-subs-btn" title="Обновить все подписки" aria-label="Обновить все подписки">
+        <button class="btn ghost icon" id="update-subs-btn" data-i18n-title="servers.update_subs_title" data-i18n-aria="servers.update_subs_title" title="Обновить все подписки" aria-label="Обновить все подписки">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 0 0-14.3-4.9L4 8M4 4v4h4M4 13a8 8 0 0 0 14.3 4.9L20 16M20 20v-4h-4"/></svg>
         </button>
-        <button class="btn ghost icon" id="qr-btn" title="Найти QR-код сервера или подписки на экране" aria-label="Добавить по QR-коду">
+        <button class="btn ghost icon" id="qr-btn" data-i18n-title="servers.qr_title" data-i18n-aria="servers.qr_aria" title="Найти QR-код сервера или подписки на экране" aria-label="Добавить по QR-коду">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h2.5v2.5H14zM17.5 17.5H20V20h-2.5zM14 20h1M20 14v1"/></svg>
         </button>
-        <button class="btn" id="add-btn">Добавить</button>
-        <button class="btn primary" id="paste-btn" title="Добавить ссылку или подписку из буфера обмена">Вставить</button>
+        <button class="btn" id="add-btn" data-i18n="servers.add">Добавить</button>
+        <button class="btn primary" id="paste-btn" data-i18n="servers.paste" data-i18n-title="servers.paste_title" title="Добавить ссылку или подписку из буфера обмена">Вставить</button>
       </div>
       <div class="list" id="server-list"></div>
     </section>
 
     <section class="view" id="view-subs">
       <form class="bar" id="sub-form">
-        <input class="field-input grow" id="sub-url" placeholder="Ссылка на подписку, https://…" aria-label="Ссылка на подписку">
-        <input class="field-input" id="sub-name" placeholder="Название (необязательно)" aria-label="Название">
-        <button class="btn primary" id="sub-add" type="submit">Добавить подписку</button>
+        <input class="field-input grow" id="sub-url" data-i18n-ph="subs.url_ph" data-i18n-aria="subs.url_aria" placeholder="Ссылка на подписку, https://…" aria-label="Ссылка на подписку">
+        <input class="field-input" id="sub-name" data-i18n-ph="subs.name_ph" data-i18n-aria="subs.name_aria" placeholder="Название (необязательно)" aria-label="Название">
+        <button class="btn primary" id="sub-add" type="submit" data-i18n="subs.add">Добавить подписку</button>
       </form>
       <div class="list" id="sub-list"></div>
     </section>
@@ -101,93 +101,104 @@
     <section class="view" id="view-settings">
       <form class="settings" id="settings-form">
         <section>
-          <h3>Подключение</h3>
+          <h3 data-i18n="s.connection">Подключение</h3>
           <label class="row-field">
-            <span>Режим</span>
+            <span data-i18n="s.mode">Режим</span>
             <select name="mode">
-              <option value="proxy">Прокси — браузеры и большинство программ</option>
-              <option value="tun">Весь трафик — нужны права администратора</option>
+              <option value="proxy" data-i18n="s.mode_proxy">Прокси — браузеры и большинство программ</option>
+              <option value="tun" data-i18n="s.mode_tun">Весь трафик — нужны права администратора</option>
             </select>
           </label>
-          <label class="check"><input type="checkbox" name="bypassRu"> Российские сайты (.ru, .su, .рф) открывать напрямую</label>
-          <label class="check"><input type="checkbox" name="autoReconnect"> Переподключаться, если VPN перестал работать</label>
-          <p class="hint">Клиент проверяет соединение каждые 20 секунд. Если сервер перестал отвечать, Vlessia переподключится, а если не поможет — перейдёт на самый быстрый сервер той же подписки.</p>
+          <label class="check"><input type="checkbox" name="bypassRu"> <span data-i18n="s.bypass_ru">Российские сайты (.ru, .su, .рф) открывать напрямую</span></label>
+          <label class="check"><input type="checkbox" name="autoReconnect"> <span data-i18n="s.auto_reconnect">Переподключаться, если VPN перестал работать</span></label>
+          <p class="hint" data-i18n="s.auto_reconnect_hint">Клиент проверяет соединение каждые 20 секунд. Если сервер перестал отвечать, Vlessia переподключится, а если не поможет — перейдёт на самый быстрый сервер той же подписки.</p>
+          <label class="check"><input type="checkbox" name="killSwitch"> <span data-i18n="s.kill_switch">Kill switch: блокировать интернет, когда VPN выключен</span></label>
+          <p class="hint" id="kill-hint"></p>
+          <label class="check"><input type="checkbox" name="balance"> <span data-i18n="s.balance">Балансировка между серверами подписки</span></label>
+          <p class="hint" data-i18n="s.balance_hint">Новые соединения распределяются между серверами одной подписки (round-robin). Не работает для WireGuard, AmneziaWG и OpenVPN.</p>
           <details class="more">
-            <summary>Дополнительно</summary>
+            <summary data-i18n="s.more">Дополнительно</summary>
             <div class="more-body">
-              <label class="row-field"><span>DNS-серверы</span><input class="field-input" name="dns" aria-describedby="dns-hint"></label>
-              <p class="hint" id="dns-hint">Через запятую. Первый также назначается адаптеру в режиме «Весь трафик».</p>
+              <label class="row-field"><span data-i18n="s.dns">DNS-серверы</span><input class="field-input" name="dns" aria-describedby="dns-hint"></label>
+              <p class="hint" id="dns-hint" data-i18n="s.dns_hint">Через запятую. Первый также назначается адаптеру в режиме «Весь трафик».</p>
               <div class="pair">
-                <label class="row-field"><span>Порт SOCKS5</span><input class="field-input" name="socksPort" type="number" min="1" max="65535"></label>
-                <label class="row-field"><span>Порт HTTP</span><input class="field-input" name="httpPort" type="number" min="1" max="65535"></label>
+                <label class="row-field"><span data-i18n="s.socks">Порт SOCKS5</span><input class="field-input" name="socksPort" type="number" min="1" max="65535"></label>
+                <label class="row-field"><span data-i18n="s.http">Порт HTTP</span><input class="field-input" name="httpPort" type="number" min="1" max="65535"></label>
               </div>
             </div>
           </details>
         </section>
 
         <section>
-          <h3>Запуск</h3>
-          <label class="check"><input type="checkbox" id="autostart"> Запускать вместе с Windows</label>
+          <h3 data-i18n="s.startup">Запуск</h3>
+          <label class="check"><input type="checkbox" id="autostart"> <span data-i18n="s.autostart">Запускать вместе с системой</span></label>
           <p class="hint" id="autostart-hint"></p>
-          <label class="check"><input type="checkbox" name="autoConnect"> Подключаться к выбранному серверу при запуске</label>
-          <label class="check"><input type="checkbox" name="sound"> Звук при подключении</label>
+          <label class="check"><input type="checkbox" name="autoConnect"> <span data-i18n="s.auto_connect">Подключаться к выбранному серверу при запуске</span></label>
+          <label class="check"><input type="checkbox" name="sound"> <span data-i18n="s.sound">Звук при подключении</span></label>
         </section>
 
         <section>
-          <h3>Правила для сайтов</h3>
+          <h3 data-i18n="s.rules">Правила для сайтов</h3>
           <div class="pair">
-            <label class="row-field"><span>Всегда через VPN</span><textarea name="proxyRules" rows="4" spellcheck="false" placeholder="youtube.com&#10;instagram.com"></textarea></label>
-            <label class="row-field"><span>Всегда напрямую</span><textarea name="directRules" rows="4" spellcheck="false" placeholder="gosuslugi.ru&#10;95.163.0.0/16"></textarea></label>
+            <label class="row-field"><span data-i18n="s.rules_vpn">Всегда через VPN</span><textarea name="proxyRules" rows="4" spellcheck="false" placeholder="youtube.com&#10;instagram.com"></textarea></label>
+            <label class="row-field"><span data-i18n="s.rules_direct">Всегда напрямую</span><textarea name="directRules" rows="4" spellcheck="false" placeholder="gosuslugi.ru&#10;95.163.0.0/16"></textarea></label>
           </div>
-          <p class="hint">По одному на строку: домен (вместе с поддоменами), IP-адрес или подсеть. «Через VPN» важнее «Напрямую» и галочки про российские сайты.</p>
+          <p class="hint" data-i18n="s.rules_hint">По одному на строку: домен (вместе с поддоменами), IP-адрес или подсеть. «Через VPN» важнее «Напрямую» и галочки про российские сайты.</p>
         </section>
 
         <section>
-          <h3>Оформление</h3>
+          <h3 data-i18n="s.appearance">Оформление</h3>
           <label class="row-field">
-            <span>Тема</span>
+            <span data-i18n="s.language">Язык</span>
+            <select name="lang" id="lang-select">
+              <option value="ru">Русский</option>
+              <option value="en">English</option>
+            </select>
+          </label>
+          <label class="row-field">
+            <span data-i18n="s.theme">Тема</span>
             <select name="theme">
-              <option value="">Как в системе</option>
-              <option value="light">Светлая</option>
-              <option value="dark">Тёмная</option>
+              <option value="" data-i18n="theme.system">Как в системе</option>
+              <option value="light" data-i18n="theme.light">Светлая</option>
+              <option value="dark" data-i18n="theme.dark">Тёмная</option>
             </select>
           </label>
           <fieldset class="swatches">
-            <legend>Цвет акцента</legend>
-            <label class="swatch" data-accent="lagoon" title="Лагуна"><input type="radio" name="accent" value="" aria-label="Лагуна"><span></span></label>
-            <label class="swatch" data-accent="blue" title="Синий"><input type="radio" name="accent" value="blue" aria-label="Синий"><span></span></label>
-            <label class="swatch" data-accent="violet" title="Фиолетовый"><input type="radio" name="accent" value="violet" aria-label="Фиолетовый"><span></span></label>
-            <label class="swatch" data-accent="rose" title="Розовый"><input type="radio" name="accent" value="rose" aria-label="Розовый"><span></span></label>
-            <label class="swatch" data-accent="orange" title="Оранжевый"><input type="radio" name="accent" value="orange" aria-label="Оранжевый"><span></span></label>
-            <label class="swatch" data-accent="green" title="Зелёный"><input type="radio" name="accent" value="green" aria-label="Зелёный"><span></span></label>
-            <label class="swatch" data-accent="graphite" title="Графит"><input type="radio" name="accent" value="graphite" aria-label="Графит"><span></span></label>
+            <legend data-i18n="s.accent">Цвет акцента</legend>
+            <label class="swatch" data-accent="lagoon" data-i18n-title="accent.lagoon" title="Лагуна"><input type="radio" name="accent" value="" data-i18n-aria="accent.lagoon" aria-label="Лагуна"><span></span></label>
+            <label class="swatch" data-accent="blue" data-i18n-title="accent.blue" title="Синий"><input type="radio" name="accent" value="blue" data-i18n-aria="accent.blue" aria-label="Синий"><span></span></label>
+            <label class="swatch" data-accent="violet" data-i18n-title="accent.violet" title="Фиолетовый"><input type="radio" name="accent" value="violet" data-i18n-aria="accent.violet" aria-label="Фиолетовый"><span></span></label>
+            <label class="swatch" data-accent="rose" data-i18n-title="accent.rose" title="Розовый"><input type="radio" name="accent" value="rose" data-i18n-aria="accent.rose" aria-label="Розовый"><span></span></label>
+            <label class="swatch" data-accent="orange" data-i18n-title="accent.orange" title="Оранжевый"><input type="radio" name="accent" value="orange" data-i18n-aria="accent.orange" aria-label="Оранжевый"><span></span></label>
+            <label class="swatch" data-accent="green" data-i18n-title="accent.green" title="Зелёный"><input type="radio" name="accent" value="green" data-i18n-aria="accent.green" aria-label="Зелёный"><span></span></label>
+            <label class="swatch" data-accent="graphite" data-i18n-title="accent.graphite" title="Графит"><input type="radio" name="accent" value="graphite" data-i18n-aria="accent.graphite" aria-label="Графит"><span></span></label>
           </fieldset>
-          <label class="check"><input type="checkbox" name="animations"> Анимации</label>
+          <label class="check"><input type="checkbox" name="animations"> <span data-i18n="s.animations">Анимации</span></label>
         </section>
 
         <section>
-          <h3>Обновления</h3>
-          <label class="check"><input type="checkbox" name="updateCheck"> Проверять обновления автоматически</label>
+          <h3 data-i18n="s.updates">Обновления</h3>
+          <label class="check"><input type="checkbox" name="updateCheck"> <span data-i18n="s.update_check">Проверять обновления автоматически</span></label>
           <div class="inline">
             <span class="muted" id="version-line"></span>
-            <button class="btn ghost" type="button" id="check-update">Проверить сейчас</button>
+            <button class="btn ghost" type="button" id="check-update" data-i18n="s.check_now">Проверить сейчас</button>
           </div>
         </section>
 
         <section>
-          <h3>Журнал</h3>
+          <h3 data-i18n="s.log">Журнал</h3>
           <label class="row-field">
-            <span>Подробность журнала Xray</span>
+            <span data-i18n="s.log_level">Подробность журнала Xray</span>
             <select name="logLevel">
-              <option value="error">Только ошибки</option>
-              <option value="warning">Предупреждения</option>
-              <option value="info">Подробно</option>
-              <option value="debug">Отладка</option>
-              <option value="none">Не вести</option>
+              <option value="error" data-i18n="log.error">Только ошибки</option>
+              <option value="warning" data-i18n="log.warning">Предупреждения</option>
+              <option value="info" data-i18n="log.info">Подробно</option>
+              <option value="debug" data-i18n="log.debug">Отладка</option>
+              <option value="none" data-i18n="log.none">Не вести</option>
             </select>
           </label>
           <div class="inline">
-            <button class="btn ghost" type="button" id="open-dir">Открыть папку данных</button>
+            <button class="btn ghost" type="button" id="open-dir" data-i18n="s.open_dir">Открыть папку данных</button>
           </div>
         </section>
       </form>
@@ -195,8 +206,8 @@
 
     <section class="view" id="view-logs">
       <div class="bar">
-        <label class="check"><input type="checkbox" id="logs-auto" checked> Обновлять автоматически</label>
-        <button class="btn ghost" id="logs-refresh">Обновить</button>
+        <label class="check"><input type="checkbox" id="logs-auto" checked> <span data-i18n="logs.auto">Обновлять автоматически</span></label>
+        <button class="btn ghost" id="logs-refresh" data-i18n="logs.refresh">Обновить</button>
       </div>
       <pre class="logs" id="logs"></pre>
     </section>
@@ -204,77 +215,92 @@
 
   <dialog id="add-dialog">
     <form method="dialog">
-      <h2>Добавить серверы</h2>
-      <p class="muted">Вставьте ссылки (по одной на строку), URL подписки или содержимое файла .conf / .ovpn. Файл может быть и картинкой с QR-кодом.</p>
-      <textarea id="add-text" rows="7" spellcheck="false" aria-label="Ссылки"></textarea>
+      <h2 data-i18n="d.add_title">Добавить серверы</h2>
+      <p class="muted" data-i18n="d.add_sub">Вставьте ссылки (по одной на строку), URL подписки или содержимое файла .conf / .ovpn. Файл может быть и картинкой с QR-кодом.</p>
+      <textarea id="add-text" rows="7" spellcheck="false" data-i18n-aria="d.add_aria" aria-label="Ссылки"></textarea>
       <div class="dialog-actions">
-        <button class="btn ghost left" value="file" id="add-file">Открыть файл…</button>
-        <button class="btn ghost" value="cancel">Отмена</button>
-        <button class="btn primary" value="ok">Добавить</button>
+        <button class="btn ghost left" value="file" id="add-file" data-i18n="d.add_file">Открыть файл…</button>
+        <button class="btn ghost" value="cancel" data-i18n="d.cancel">Отмена</button>
+        <button class="btn primary" value="ok" data-i18n="d.add">Добавить</button>
       </div>
     </form>
   </dialog>
 
   <dialog id="admin-dialog">
     <form method="dialog">
-      <h2>Нужны права администратора</h2>
-      <p class="muted">Режим «Весь трафик» создаёт виртуальный сетевой адаптер — Windows разрешает это только администратору. WireGuard, AmneziaWG и OpenVPN работают только в этом режиме.</p>
+      <h2 data-i18n="d.admin_title">Нужны права администратора</h2>
+      <p class="muted" data-i18n="d.admin_sub">Режим «Весь трафик» создаёт виртуальный сетевой адаптер — Windows разрешает это только администратору. WireGuard, AmneziaWG и OpenVPN работают только в этом режиме.</p>
       <div class="dialog-actions">
-        <button class="btn ghost" value="cancel">Отмена</button>
-        <button class="btn ghost" value="proxy" id="admin-proxy">Подключить через прокси</button>
-        <button class="btn primary" value="restart">Перезапустить от администратора</button>
+        <button class="btn ghost" value="cancel" data-i18n="d.cancel">Отмена</button>
+        <button class="btn ghost" value="proxy" id="admin-proxy" data-i18n="d.admin_proxy">Подключить через прокси</button>
+        <button class="btn primary" value="restart" data-i18n="d.admin_restart">Перезапустить от администратора</button>
       </div>
     </form>
   </dialog>
 
   <dialog id="auth-dialog">
     <form method="dialog">
-      <h2>Вход OpenVPN</h2>
-      <p class="muted">Сервер <b id="auth-server"></b> просит логин и пароль. Они сохранятся в настройках клиента.</p>
-      <input class="field-input" id="auth-user" placeholder="Логин" autocomplete="username" aria-label="Логин">
-      <input class="field-input" id="auth-pass" type="password" placeholder="Пароль" autocomplete="current-password" aria-label="Пароль">
+      <h2 data-i18n="d.auth_title">Вход OpenVPN</h2>
+      <p class="muted"><span data-i18n="d.auth_pre">Сервер</span> <b id="auth-server"></b> <span data-i18n="d.auth_post">просит логин и пароль. Они сохранятся в настройках клиента.</span></p>
+      <input class="field-input" id="auth-user" data-i18n-ph="d.auth_user_ph" data-i18n-aria="d.auth_user_ph" placeholder="Логин" autocomplete="username" aria-label="Логин">
+      <input class="field-input" id="auth-pass" type="password" data-i18n-ph="d.auth_pass_ph" data-i18n-aria="d.auth_pass_ph" placeholder="Пароль" autocomplete="current-password" aria-label="Пароль">
       <div class="dialog-actions">
-        <button class="btn ghost" value="cancel">Отмена</button>
-        <button class="btn primary" value="ok">Войти</button>
+        <button class="btn ghost" value="cancel" data-i18n="d.cancel">Отмена</button>
+        <button class="btn primary" value="ok" data-i18n="d.login">Войти</button>
       </div>
     </form>
   </dialog>
 
   <dialog id="rename-dialog">
     <form method="dialog">
-      <h2>Название подписки</h2>
-      <p class="muted">Оставьте пустым, чтобы показывать название от провайдера.</p>
-      <input class="field-input" id="rename-input" aria-label="Название">
+      <h2 data-i18n="d.rename_title">Название подписки</h2>
+      <p class="muted" data-i18n="d.rename_sub">Оставьте пустым, чтобы показывать название от провайдера.</p>
+      <input class="field-input" id="rename-input" data-i18n-aria="d.rename_ph" aria-label="Название">
       <div class="dialog-actions">
-        <button class="btn ghost" value="cancel">Отмена</button>
-        <button class="btn primary" value="ok">Сохранить</button>
+        <button class="btn ghost" value="cancel" data-i18n="d.cancel">Отмена</button>
+        <button class="btn primary" value="ok" data-i18n="d.save">Сохранить</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="via-dialog">
+    <form method="dialog">
+      <h2 data-i18n="d.via_title">Цепочка: второй сервер</h2>
+      <p class="muted" id="via-sub"></p>
+      <label class="row-field"><span data-i18n="d.via_relay">Ретранслятор</span>
+        <select id="via-select"></select>
+      </label>
+      <div class="dialog-actions">
+        <button class="btn ghost" value="cancel" data-i18n="d.cancel">Отмена</button>
+        <button class="btn primary" value="ok" data-i18n="d.save">Сохранить</button>
       </div>
     </form>
   </dialog>
 
   <dialog id="notes-dialog">
     <form method="dialog">
-      <h2 id="notes-title">Что нового</h2>
+      <h2 id="notes-title" data-i18n="d.notes_title">Что нового</h2>
       <div class="notes" id="notes-body"></div>
       <div class="dialog-actions">
-        <button class="btn ghost" value="cancel">Закрыть</button>
-        <button class="btn primary" value="update">Обновить</button>
+        <button class="btn ghost" value="cancel" data-i18n="d.close">Закрыть</button>
+        <button class="btn primary" value="update" data-i18n="dock.update">Обновить</button>
       </div>
     </form>
   </dialog>
 
   <dialog id="welcome-dialog">
     <form method="dialog">
-      <h2>Бесплатный VPN навсегда</h2>
-      <p class="muted">Нет своего сервера? Получите бесплатный VPN навсегда в Telegram-боте <b>@v4hood_bot</b>, а затем добавьте его в Vlessia кнопкой «Вставить».</p>
+      <h2 data-i18n="d.welcome_title">Бесплатный VPN навсегда</h2>
+      <p class="muted" data-i18n="d.welcome_sub">Нет своего сервера? Получите бесплатный VPN навсегда в Telegram-боте <b>@v4hood_bot</b>, а затем добавьте его в Vlessia кнопкой «Вставить».</p>
       <div class="dialog-actions">
-        <button class="btn ghost" value="cancel">Не сейчас</button>
-        <button class="btn primary" value="bot">Открыть бота</button>
+        <button class="btn ghost" value="cancel" data-i18n="d.welcome_no">Не сейчас</button>
+        <button class="btn primary" value="bot" data-i18n="d.welcome_bot">Открыть бота</button>
       </div>
     </form>
   </dialog>
 
   <div class="toasts" id="toasts" aria-live="polite"></div>
+  <script src="i18n.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

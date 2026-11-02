@@ -14,6 +14,7 @@ type fakeHost struct {
 	mu     sync.Mutex
 	events []string
 	clip   string
+	alerts []string
 }
 
 func (h *fakeHost) Emit(name, payload string) {
@@ -28,6 +29,11 @@ func (h *fakeHost) SetClipboard(text string)      { h.clip = text }
 func (h *fakeHost) PlaySound(string)              {}
 func (h *fakeHost) InstallPackage(string)         {}
 func (h *fakeHost) OpenVpnSettings()              {}
+func (h *fakeHost) Notify(title, text string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.alerts = append(h.alerts, title+": "+text)
+}
 
 func TestCall(t *testing.T) {
 	host := &fakeHost{}

@@ -8,4 +8,5 @@ type Tray struct{}
 func StartTray(*App) *Tray         { return &Tray{} }
 func (*Tray) Update(Status)        {}
 func (*Tray) SetUpdate(UpdateInfo) {}
+func (*Tray) SetLang(string)       {}
 func (*Tray) Stop()                {}

@@ -47,6 +47,7 @@ func Run(args []string) int {
 	socks := fs.Int("socks", 0, "client SOCKS port")
 	bypass := fs.String("bypass", "", "comma-separated server IPs routed around the tunnel")
 	dns := fs.String("dns", "1.1.1.1", "DNS server resolved through the tunnel")
+	block := fs.Bool("block", false, "kill switch: drop all traffic instead of forwarding it to the client")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -69,7 +70,7 @@ func Run(args []string) int {
 	send("%s", *token)
 	logf := func(format string, a ...any) { send("log "+format, a...) }
 
-	cleanup, err := start(*socks, splitIPs(*bypass), *dns, logf)
+	cleanup, err := start(*socks, splitIPs(*bypass), *dns, *block, logf)
 	if err != nil {
 		send("error %s", strings.ReplaceAll(err.Error(), "\n", " "))
 		return 1
@@ -103,7 +104,9 @@ func splitIPs(s string) []net.IP {
 }
 
 // start brings TUN mode up and returns the function that tears it down.
-func start(socksPort int, bypass []net.IP, dns string, logf func(string, ...any)) (func(), error) {
+// In block mode (the kill switch) the tunnel drops everything into a
+// black hole instead of forwarding it to the client.
+func start(socksPort int, bypass []net.IP, dns string, block bool, logf func(string, ...any)) (func(), error) {
 	iface, gw, err := tun.DefaultRoute()
 	if err != nil {
 		return nil, err
@@ -127,7 +130,7 @@ func start(socksPort int, bypass []net.IP, dns string, logf func(string, ...any)
 		undo = append(undo, del)
 	}
 
-	inst, err := xray.Start(helperConfig(socksPort, dns))
+	inst, err := xray.Start(helperConfig(socksPort, dns, block))
 	if err != nil {
 		cleanup()
 		return nil, err
@@ -154,7 +157,9 @@ func start(socksPort int, bypass []net.IP, dns string, logf func(string, ...any)
 
 // helperConfig: TUN inbound -> client's SOCKS inbound; plain DNS from the
 // tunnel is answered by Xray's DNS, whose queries also go to the client.
-func helperConfig(socksPort int, dns string) []byte {
+// In block mode the first (default) outbound is a black hole and even DNS
+// is dropped: the kill switch.
+func helperConfig(socksPort int, dns string, block bool) []byte {
 	type obj = map[string]any
 	cfg := obj{
 		"log": obj{"loglevel": "warning", "access": "none"},
@@ -172,6 +177,17 @@ func helperConfig(socksPort int, dns string) []byte {
 		"routing": obj{"rules": []obj{
 			{"type": "field", "inboundTag": []string{"tun-in"}, "port": "53", "outboundTag": "dns-out"},
 		}},
+	}
+	if block {
+		cfg["outbounds"] = []obj{
+			{"tag": "block", "protocol": "blackhole"},
+			{"tag": "client", "protocol": "socks", "settings": obj{
+				"servers": []obj{{"address": "127.0.0.1", "port": socksPort}},
+			}},
+		}
+		cfg["routing"] = obj{"rules": []obj{
+			{"type": "field", "inboundTag": []string{"tun-in"}, "port": "53", "outboundTag": "block"},
+		}}
 	}
 	b, _ := json.Marshal(cfg)
 	return b
@@ -203,7 +219,9 @@ type Config struct {
 	SocksPort int
 	Bypass    []string // VPN server IPs
 	DNS       string
-	Logf      func(string, ...any)
+	// Block is the kill switch: the tunnel drops all traffic.
+	Block bool
+	Logf  func(string, ...any)
 }
 
 // ErrCancelled means the user dismissed the password prompt.
@@ -229,6 +247,9 @@ func Start(ctx context.Context, cfg Config) (*Session, error) {
 		"--socks", fmt.Sprint(cfg.SocksPort),
 		"--bypass", strings.Join(cfg.Bypass, ","),
 		"--dns", cfg.DNS,
+	}
+	if cfg.Block {
+		args = append(args, "--block")
 	}
 	cmd, err := elevate(exe, args)
 	if err != nil {

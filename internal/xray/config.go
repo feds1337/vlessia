@@ -11,11 +11,13 @@ import (
 )
 
 const (
-	TagProxy  = "proxy"
-	TagDirect = "direct"
-	TagBlock  = "block"
-	TagDNS    = "dns-out"
-	TagTun    = "tun-in"
+	TagProxy   = "proxy"
+	TagDirect  = "direct"
+	TagBlock   = "block"
+	TagDNS     = "dns-out"
+	TagTun     = "tun-in"
+	TagVia     = "via"
+	TagBalance = "bal"
 )
 
 // Options control everything apart from the server itself.
@@ -40,6 +42,24 @@ type Options struct {
 	DNS         []string
 	LogFile     string
 	LogLevel    string
+
+	// Via is a second server the connection goes through (multi-tunnel):
+	// the main outbound's outboundTag points at it.
+	Via           *profile.Server
+	ViaAddr       string // pre-resolved IP of Via, for TUN mode
+	ViaBridgePort int    // local bridge of Via, when it is a full-tunnel protocol
+
+	// Balance replaces the single proxy outbound with an Xray balancing
+	// tag that spreads new connections across the listed servers
+	// (round-robin). They must not be full-tunnel; BalanceAddrs holds
+	// their pre-resolved IPs in TUN mode, same order.
+	Balance      []*profile.Server
+	BalanceAddrs []string
+
+	// Block builds a config that drops every connection into a black hole
+	// (the kill switch); only the inbounds and, in TUN mode, the adapter
+	// stay up.
+	Block bool
 }
 
 type obj = map[string]any
@@ -53,6 +73,9 @@ var privateCIDRs = []string{
 
 // BuildConfig returns a complete Xray JSON config.
 func BuildConfig(s *profile.Server, o Options) ([]byte, error) {
+	if o.Block {
+		return buildBlockConfig(o)
+	}
 	sniffing := obj{"enabled": true, "destOverride": []string{"http", "tls", "quic"}, "routeOnly": true}
 
 	inbounds := []obj{
@@ -76,21 +99,54 @@ func BuildConfig(s *profile.Server, o Options) ([]byte, error) {
 		})
 	}
 
-	proxy, err := buildOutbound(s, o)
-	if err != nil {
-		return nil, err
+	var outbounds []obj
+	var balancing []string
+	if len(o.Balance) >= 2 {
+		// One balancing tag where the rules expect the proxy: new
+		// connections are spread across the group round-robin.
+		for i, bs := range o.Balance {
+			tag := fmt.Sprintf("%s-%d", TagBalance, i+1)
+			var addr string
+			if i < len(o.BalanceAddrs) {
+				addr = o.BalanceAddrs[i]
+			}
+			ob, err := buildOutboundTag(bs, o, tag, addr, -1)
+			if err != nil {
+				return nil, err
+			}
+			if o.Via != nil {
+				ob["outboundTag"] = TagVia
+			}
+			outbounds = append(outbounds, ob)
+			balancing = append(balancing, tag)
+		}
+	} else {
+		proxy, err := buildOutboundTag(s, o, TagProxy, o.ServerAddress, -1)
+		if err != nil {
+			return nil, err
+		}
+		if o.Via != nil {
+			proxy["outboundTag"] = TagVia
+		}
+		outbounds = append(outbounds, proxy)
+	}
+	if o.Via != nil {
+		via, err := buildOutboundTag(o.Via, o, TagVia, o.ViaAddr, o.ViaBridgePort)
+		if err != nil {
+			return nil, err
+		}
+		outbounds = append(outbounds, via)
 	}
 	directSockopt := obj{"domainStrategy": "UseIP"}
 	if o.Interface != "" {
 		directSockopt["interface"] = o.Interface
 	}
 	direct := obj{"tag": TagDirect, "protocol": "freedom", "streamSettings": obj{"sockopt": directSockopt}}
-	outbounds := []obj{
-		proxy,
+	outbounds = append(outbounds,
 		direct,
-		{"tag": TagBlock, "protocol": "blackhole"},
-		{"tag": TagDNS, "protocol": "dns"},
-	}
+		obj{"tag": TagBlock, "protocol": "blackhole"},
+		obj{"tag": TagDNS, "protocol": "dns"},
+	)
 
 	var rules []obj
 	if o.TUN {
@@ -149,22 +205,73 @@ func BuildConfig(s *profile.Server, o Options) ([]byte, error) {
 			"statsOutboundDownlink": true,
 		}},
 	}
+	if balancing != nil {
+		cfg["balancing"] = []obj{{"tag": TagProxy, "strategy": "roundrobin", "outbounds": balancing}}
+	}
 	return json.MarshalIndent(cfg, "", "  ")
 }
 
-func buildOutbound(s *profile.Server, o Options) (obj, error) {
+// buildBlockConfig drops everything into a black hole while keeping the
+// inbounds (and the TUN adapter) up: the kill switch. Private networks stay
+// reachable, so LAN keeps working.
+func buildBlockConfig(o Options) ([]byte, error) {
+	inbounds := []obj{
+		{
+			"tag": "socks-in", "listen": "127.0.0.1", "port": o.SocksPort, "protocol": "socks",
+			"settings": obj{"udp": true},
+		},
+		{
+			"tag": "http-in", "listen": "127.0.0.1", "port": o.HTTPPort, "protocol": "http",
+		},
+	}
+	var rules []obj
+	if o.TUN {
+		inbounds = append(inbounds, obj{
+			"tag": TagTun, "port": 0, "protocol": "tun",
+			"settings": obj{"name": nonEmpty(o.TunName, "tun0"), "MTU": 1500},
+		})
+		// DNS from the tunnel is dropped too, so nothing leaks.
+		rules = append(rules, obj{"type": "field", "inboundTag": []string{TagTun}, "port": "53", "outboundTag": TagBlock})
+	}
+	directSockopt := obj{"domainStrategy": "UseIP"}
+	if o.Interface != "" {
+		directSockopt["interface"] = o.Interface
+	}
+	// The first outbound is the default one: it must be the black hole, or
+	// anything not matched by a rule would go out directly.
+	cfg := obj{
+		"log":      obj{"loglevel": "warning", "access": "none", "error": o.LogFile},
+		"inbounds": inbounds,
+		"outbounds": []obj{
+			{"tag": TagBlock, "protocol": "blackhole"},
+			{"tag": TagDirect, "protocol": "freedom", "streamSettings": obj{"sockopt": directSockopt}},
+		},
+		"routing": obj{"rules": append(rules, obj{"type": "field", "ip": privateCIDRs, "outboundTag": TagDirect})},
+		"stats":   obj{},
+	}
+	return json.MarshalIndent(cfg, "", "  ")
+}
+
+// buildOutboundTag builds the outbound for s under tag. addrOverride, when
+// non-empty, replaces the server address (the pre-resolved IP in TUN mode);
+// bridgePort, when >= 0, is the local bridge of a full-tunnel protocol
+// (o.BridgePort for the main server, o.ViaBridgePort for the relay).
+func buildOutboundTag(s *profile.Server, o Options, tag, addrOverride string, bridgePort int) (obj, error) {
 	if s.IsFullTunnel() {
-		if o.BridgePort == 0 {
+		if bridgePort < 0 {
+			bridgePort = o.BridgePort
+		}
+		if bridgePort == 0 {
 			return nil, errors.New("туннель " + s.Protocol + " не запущен")
 		}
 		// Loopback: no interface binding, it must not leave the machine.
-		return obj{"tag": TagProxy, "protocol": "socks", "settings": obj{
-			"servers": []obj{{"address": "127.0.0.1", "port": o.BridgePort}},
+		return obj{"tag": tag, "protocol": "socks", "settings": obj{
+			"servers": []obj{{"address": "127.0.0.1", "port": bridgePort}},
 		}}, nil
 	}
 
-	addr := nonEmpty(o.ServerAddress, s.Address)
-	out := obj{"tag": TagProxy, "protocol": s.Protocol}
+	addr := nonEmpty(addrOverride, s.Address)
+	out := obj{"tag": tag, "protocol": s.Protocol}
 
 	switch s.Protocol {
 	case "vless":
@@ -264,6 +371,11 @@ func buildOutbound(s *profile.Server, o Options) (obj, error) {
 	}
 	out["streamSettings"] = stream
 	return out, nil
+}
+
+// buildOutbound is the main server's outbound.
+func buildOutbound(s *profile.Server, o Options) (obj, error) {
+	return buildOutboundTag(s, o, TagProxy, o.ServerAddress, -1)
 }
 
 // hysteriaStream returns the transport part for Hysteria 2; TLS settings

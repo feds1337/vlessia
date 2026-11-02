@@ -65,6 +65,10 @@ type Server struct {
 
 	SubID string `json:"subId,omitempty"` // owning subscription, empty for manual
 	Link  string `json:"link"`            // original share link
+
+	// Via is the ID of a second server: the connection to this one goes
+	// through it (multi-tunnel / multi-hop).
+	Via string `json:"via,omitempty"`
 }
 
 // WireGuard holds a WireGuard / AmneziaWG client config. Keys are base64,

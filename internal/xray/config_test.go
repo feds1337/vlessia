@@ -146,6 +146,120 @@ func TestWireGuardConf(t *testing.T) {
 	}
 }
 
+// TestChainConfig: the relay (multi-tunnel) becomes a second outbound the
+// main one points at with outboundTag.
+func TestChainConfig(t *testing.T) {
+	main, err := profile.ParseLink(links[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	relay, err := profile.ParseLink(links[4]) // trojan
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := BuildConfig(main, Options{
+		SocksPort: 10808, HTTPPort: 10809, TUN: true, TunName: "Vlessia", Interface: "Ethernet",
+		ServerAddress: "9.9.9.9", Via: relay, ViaAddr: "5.5.5.5",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := loadConfig(cfg); err != nil {
+		t.Fatalf("xray rejected the chained config: %v\n%s", err, cfg)
+	}
+	var parsed struct {
+		Outbounds []map[string]any `json:"outbounds"`
+	}
+	if err := json.Unmarshal(cfg, &parsed); err != nil {
+		t.Fatal(err)
+	}
+	if len(parsed.Outbounds) != 5 {
+		t.Fatalf("outbounds = %d, want proxy, via, direct, block, dns", len(parsed.Outbounds))
+	}
+	proxy, via := parsed.Outbounds[0], parsed.Outbounds[1]
+	if proxy["tag"] != TagProxy || proxy["outboundTag"] != TagVia {
+		t.Fatalf("the proxy outbound must go through the relay: %v", proxy)
+	}
+	if via["tag"] != TagVia || via["protocol"] != "trojan" {
+		t.Fatalf("relay outbound: %v", via)
+	}
+	if !strings.Contains(string(cfg), `"5.5.5.5"`) {
+		t.Fatal("the relay must use the pre-resolved address")
+	}
+}
+
+// TestBalanceConfig: the balancing tag replaces the single proxy outbound
+// and the routing rules keep pointing at "proxy".
+func TestBalanceConfig(t *testing.T) {
+	a, _ := profile.ParseLink(links[0])
+	b, _ := profile.ParseLink(links[1])
+	cfg, err := BuildConfig(a, Options{
+		SocksPort: 10808, HTTPPort: 10809, TUN: true, TunName: "Vlessia", Interface: "Ethernet",
+		Balance: []*profile.Server{a, b}, BalanceAddrs: []string{"1.1.1.1", "2.2.2.2"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := loadConfig(cfg); err != nil {
+		t.Fatalf("xray rejected the balancing config: %v\n%s", err, cfg)
+	}
+	var parsed struct {
+		Outbounds []map[string]any `json:"outbounds"`
+		Balancing []map[string]any `json:"balancing"`
+	}
+	if err := json.Unmarshal(cfg, &parsed); err != nil {
+		t.Fatal(err)
+	}
+	if len(parsed.Balancing) != 1 {
+		t.Fatalf("balancing sections = %d", len(parsed.Balancing))
+	}
+	bal := parsed.Balancing[0]
+	if bal["tag"] != TagProxy || bal["strategy"] != "roundrobin" {
+		t.Fatalf("balancing: %v", bal)
+	}
+	tags := bal["outbounds"].([]any)
+	if len(tags) != 2 || tags[0] != TagBalance+"-1" || tags[1] != TagBalance+"-2" {
+		t.Fatalf("balanced outbounds: %v", tags)
+	}
+	for _, ob := range parsed.Outbounds {
+		if ob["tag"] == TagProxy {
+			t.Fatalf("the proxy must be the balancing tag, not an outbound: %v", ob)
+		}
+	}
+}
+
+// TestBlockConfig: the kill switch config must drop everything; the only
+// non-block outbound is the direct one for private networks.
+func TestBlockConfig(t *testing.T) {
+	cfg, err := BuildConfig(nil, Options{Block: true, TUN: true, TunName: "Vlessia", SocksPort: 10808, HTTPPort: 10809})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := loadConfig(cfg); err != nil {
+		t.Fatalf("xray rejected the block config: %v\n%s", err, cfg)
+	}
+	var parsed struct {
+		Inbounds  []map[string]any `json:"inbounds"`
+		Outbounds []map[string]any `json:"outbounds"`
+	}
+	if err := json.Unmarshal(cfg, &parsed); err != nil {
+		t.Fatal(err)
+	}
+	// The first outbound is the default one: it must be the black hole.
+	if parsed.Outbounds[0]["tag"] != TagBlock || parsed.Outbounds[0]["protocol"] != "blackhole" {
+		t.Fatalf("the default outbound must block: %v", parsed.Outbounds[0])
+	}
+	var tun bool
+	for _, in := range parsed.Inbounds {
+		if in["tag"] == TagTun {
+			tun = true
+		}
+	}
+	if !tun {
+		t.Fatal("the block config has no TUN inbound: the adapter would disappear")
+	}
+}
+
 // vpn:// links from AmneziaVPN are qCompress'ed JSON.
 func TestAmneziaVPNLink(t *testing.T) {
 	last, _ := json.Marshal(map[string]string{"config": strings.ReplaceAll(awgConf, "DNS = 1.1.1.1", "DNS = $PRIMARY_DNS, $SECONDARY_DNS")})

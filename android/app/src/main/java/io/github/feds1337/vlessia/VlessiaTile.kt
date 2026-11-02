@@ -17,18 +17,22 @@ class VlessiaTile : TileService() {
     override fun onStartListening() {
         val tile = qsTile ?: return
         val state = Mobile.state()
+        // The kill switch keeps the VPN interface up while the VPN is off;
+        // the tile shows the VPN as active then, with a note.
+        val blocked = Mobile.killSwitch()
         tile.state = when (state) {
             "connected" -> Tile.STATE_ACTIVE
-            "disconnected" -> Tile.STATE_INACTIVE
+            "disconnected" -> if (blocked) Tile.STATE_ACTIVE else Tile.STATE_INACTIVE
             else -> Tile.STATE_UNAVAILABLE
         }
         tile.icon = Icon.createWithResource(this, R.drawable.ic_shield)
         tile.label = getString(R.string.app_name)
         if (Build.VERSION.SDK_INT >= 29) {
-            tile.subtitle = when (state) {
-                "connected" -> Mobile.serverName()
-                "connecting" -> getString(R.string.state_connecting)
-                "disconnecting" -> getString(R.string.state_disconnecting)
+            tile.subtitle = when {
+                blocked -> getString(R.string.state_blocked)
+                state == "connected" -> Mobile.serverName()
+                state == "connecting" -> getString(R.string.state_connecting)
+                state == "disconnecting" -> getString(R.string.state_disconnecting)
                 else -> null
             }
         }

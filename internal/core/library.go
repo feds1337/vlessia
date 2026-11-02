@@ -27,6 +27,9 @@ type Library struct {
 	HTTP func(timeout time.Duration) *http.Client
 	// Changed is called after the stored data changed.
 	Changed func()
+	// Remind delivers a user-visible reminder (traffic left, subscription
+	// expiry) as a system notification and a toast.
+	Remind func(text string)
 }
 
 func (l *Library) changed() {
@@ -34,6 +37,9 @@ func (l *Library) changed() {
 		l.Changed()
 	}
 }
+
+// ChangedNow fires the Changed hook; for callers outside the package.
+func (l *Library) ChangedNow() { l.changed() }
 
 // ImportText adds servers from share links, or a subscription if the text
 // is an http(s) URL. Returns how many servers were added.
@@ -213,6 +219,13 @@ func (l *Library) Select(id string) error {
 	return err
 }
 
+// AllServers returns the stored servers; the caller must not modify them.
+func (l *Library) AllServers() []*profile.Server {
+	var out []*profile.Server
+	l.Store.Read(func(d *store.Data) { out = append(out, d.Servers...) })
+	return out
+}
+
 // Selected returns a copy of the current server, or nil.
 func (l *Library) Selected() *profile.Server {
 	var srv *profile.Server
@@ -341,6 +354,7 @@ func (l *Library) updateSubscription(sub store.Subscription) (int, error) {
 		}
 		return 0, errors.New("подписка не вернула ни одного сервера")
 	}
+	l.CheckReminders()
 	return len(servers), nil
 }
 
@@ -350,6 +364,14 @@ func replaceSubscriptionServers(d *store.Data, subID string, servers []*profile.
 	for _, s := range d.Servers {
 		if s.ID == d.Selected && s.SubID == subID {
 			selectedLink = s.Link
+		}
+	}
+	// The relay chosen for a server (multi-tunnel) survives the refresh if
+	// the same link comes back with it.
+	viaByLink := map[string]string{}
+	for _, s := range d.Servers {
+		if s.SubID == subID && s.Via != "" {
+			viaByLink[s.Link] = s.Via
 		}
 	}
 	// Replace in place to keep the subscription's position in the list.
@@ -369,6 +391,21 @@ func replaceSubscriptionServers(d *store.Data, subID string, servers []*profile.
 		out = append(out, servers...)
 	}
 	d.Servers = out
+	if len(viaByLink) > 0 {
+		for _, s := range d.Servers {
+			if s.SubID != subID || s.Via != "" {
+				continue
+			}
+			if old, ok := viaByLink[s.Link]; ok {
+				for _, x := range d.Servers {
+					if x.ID == old {
+						s.Via = old
+						break
+					}
+				}
+			}
+		}
+	}
 	if selectedLink != "" {
 		d.Selected = ""
 		for _, s := range servers {

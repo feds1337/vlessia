@@ -12,6 +12,7 @@ import (
 
 	"github.com/feds1337/vlessia/internal/profile"
 	"github.com/feds1337/vlessia/internal/socks"
+	"github.com/xtls/xray-core/features/stats"
 )
 
 // plainNet dials the real network, so the local SOCKS server below can
@@ -129,7 +130,12 @@ func TestBalanceEndToEnd(t *testing.T) {
 	defer client.Close()
 
 	proxy, _ := url.Parse("http://127.0.0.1:21391")
-	hc := &http.Client{Transport: &http.Transport{Proxy: http.ProxyURL(proxy)}, Timeout: 10 * time.Second}
+	hc := &http.Client{
+		// A fresh connection per request, so the balancer really chooses
+		// an outbound each time.
+		Transport: &http.Transport{Proxy: http.ProxyURL(proxy), DisableKeepAlives: true},
+		Timeout:   10 * time.Second,
+	}
 	// A domain, not an IP: an IP target in a private range is routed
 	// directly by the built-in rule and would never reach the balancer.
 	requestURL := "http://localhost:" + port + "/"
@@ -142,6 +148,21 @@ func TestBalanceEndToEnd(t *testing.T) {
 		if resp.StatusCode != http.StatusOK {
 			t.Fatalf("request %d: status %d", i, resp.StatusCode)
 		}
+	}
+	// Round-robin: both members of the group must have handled something.
+	if m, ok := client.core.GetFeature(stats.ManagerType()).(stats.Manager); ok {
+		hit := 0
+		for n := 1; n <= 2; n++ {
+			tag := fmt.Sprintf("%s-%d", TagBalance, n)
+			if c := m.GetCounter("outbound>>>" + tag + ">>>traffic>>>uplink"); c != nil && c.Value() > 0 {
+				hit++
+			}
+		}
+		if hit != 2 {
+			t.Fatalf("round-robin used %d of the 2 servers", hit)
+		}
+	} else {
+		t.Fatal("no stats manager")
 	}
 	up, down := client.Traffic()
 	if up == 0 || down == 0 {

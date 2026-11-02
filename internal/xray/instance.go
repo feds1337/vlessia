@@ -123,7 +123,9 @@ func alreadyClosed(err error) bool {
 	return errors.Is(err, os.ErrClosed) || strings.Contains(err.Error(), os.ErrClosed.Error())
 }
 
-// Traffic returns and resets the proxy outbound byte counters.
+// Traffic returns and resets the proxy outbound byte counters. Behind a
+// balancing tag there is no "proxy" outbound: the connections are handled
+// by the bal-N members of the group, whose counters are summed here.
 func (i *Instance) Traffic() (up, down int64) {
 	i.mu.Lock()
 	defer i.mu.Unlock()
@@ -134,11 +136,25 @@ func (i *Instance) Traffic() (up, down int64) {
 	if !ok {
 		return 0, 0
 	}
+	read := func(c stats.Counter) int64 {
+		if c == nil {
+			return 0
+		}
+		return c.Set(0)
+	}
 	if c := m.GetCounter("outbound>>>" + TagProxy + ">>>traffic>>>uplink"); c != nil {
-		up = c.Set(0)
+		up = read(c)
+		down = read(m.GetCounter("outbound>>>" + TagProxy + ">>>traffic>>>downlink"))
+		return up, down
 	}
-	if c := m.GetCounter("outbound>>>" + TagProxy + ">>>traffic>>>downlink"); c != nil {
-		down = c.Set(0)
+	for n := 1; ; n++ {
+		tag := fmt.Sprintf("%s-%d", TagBalance, n)
+		cu := m.GetCounter("outbound>>>" + tag + ">>>traffic>>>uplink")
+		cd := m.GetCounter("outbound>>>" + tag + ">>>traffic>>>downlink")
+		if cu == nil && cd == nil {
+			return up, down
+		}
+		up += read(cu)
+		down += read(cd)
 	}
-	return up, down
 }

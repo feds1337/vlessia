@@ -155,6 +155,16 @@ func BuildConfig(s *profile.Server, o Options) ([]byte, error) {
 		rules = append(rules, obj{"type": "field", "inboundTag": []string{TagTun}, "port": "53", "outboundTag": TagDNS})
 	}
 	rules = append(rules, obj{"type": "field", "ip": privateCIDRs, "outboundTag": TagDirect})
+	// In balance mode the rules point at the balancer with balancerTag:
+	// Xray does not accept a balancing tag in outboundTag.
+	route := func(r obj, tag string) obj {
+		if tag == TagProxy && balancing != nil {
+			r["balancerTag"] = TagProxy
+		} else {
+			r["outboundTag"] = tag
+		}
+		return r
+	}
 	// The user's rules come before the .ru bypass: "through VPN" wins over
 	// "direct", and both over the bypass.
 	hasIPRules := false
@@ -167,10 +177,10 @@ func BuildConfig(s *profile.Server, o Options) ([]byte, error) {
 			return nil, err
 		}
 		if len(domains) > 0 {
-			rules = append(rules, obj{"type": "field", "domain": domains, "outboundTag": r.tag})
+			rules = append(rules, route(obj{"type": "field", "domain": domains}, r.tag))
 		}
 		if len(ips) > 0 {
-			rules = append(rules, obj{"type": "field", "ip": ips, "outboundTag": r.tag})
+			rules = append(rules, route(obj{"type": "field", "ip": ips}, r.tag))
 			hasIPRules = true
 		}
 	}
@@ -179,6 +189,12 @@ func BuildConfig(s *profile.Server, o Options) ([]byte, error) {
 			"type": "field", "outboundTag": TagDirect,
 			"domain": []string{"domain:ru", "domain:su", "domain:xn--p1ai", "domain:xn--d1acj3b"},
 		})
+	}
+	if balancing != nil {
+		// Everything else must go through the balancer too: the first
+		// outbound is a member of the group (bal-1), and the default route
+		// would send the traffic to that one server only.
+		rules = append(rules, obj{"type": "field", "network": "tcp,udp", "balancerTag": TagProxy})
 	}
 
 	dns := o.DNS
@@ -193,20 +209,28 @@ func BuildConfig(s *profile.Server, o Options) ([]byte, error) {
 		domainStrategy = "IPIfNonMatch"
 	}
 
+	routing := obj{"domainStrategy": domainStrategy, "rules": rules}
+	if balancing != nil {
+		// Balancers live inside routing, and the rules reach them by
+		// balancerTag. The selector matches outbound tags by prefix, so
+		// the exact bal-N tags work as well.
+		routing["balancers"] = []obj{{
+			"tag":      TagProxy,
+			"selector": balancing,
+			"strategy": obj{"type": "roundrobin"},
+		}}
+	}
 	cfg := obj{
 		"log":       obj{"loglevel": nonEmpty(o.LogLevel, "warning"), "access": "none", "error": o.LogFile},
 		"dns":       obj{"servers": dns, "queryStrategy": "UseIPv4"},
 		"inbounds":  inbounds,
 		"outbounds": outbounds,
-		"routing":   obj{"domainStrategy": domainStrategy, "rules": rules},
+		"routing":   routing,
 		"stats":     obj{},
 		"policy": obj{"system": obj{
 			"statsOutboundUplink":   true,
 			"statsOutboundDownlink": true,
 		}},
-	}
-	if balancing != nil {
-		cfg["balancing"] = []obj{{"tag": TagProxy, "strategy": "roundrobin", "outbounds": balancing}}
 	}
 	return json.MarshalIndent(cfg, "", "  ")
 }

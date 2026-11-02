@@ -188,14 +188,17 @@ func TestChainConfig(t *testing.T) {
 	}
 }
 
-// TestBalanceConfig: the balancing tag replaces the single proxy outbound
-// and the routing rules keep pointing at "proxy".
+// TestBalanceConfig: the balancer lives in routing.balancers, the rules
+// reach it through balancerTag (outboundTag with a balancer tag is rejected
+// by Xray with "non existing outTag"), and everything else is routed to it
+// by a catch-all rule instead of the default outbound.
 func TestBalanceConfig(t *testing.T) {
 	a, _ := profile.ParseLink(links[0])
 	b, _ := profile.ParseLink(links[1])
 	cfg, err := BuildConfig(a, Options{
 		SocksPort: 10808, HTTPPort: 10809, TUN: true, TunName: "Vlessia", Interface: "Ethernet",
 		Balance: []*profile.Server{a, b}, BalanceAddrs: []string{"1.1.1.1", "2.2.2.2"},
+		DirectRules: []string{"bank.example"}, ProxyRules: []string{"youtube.com"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -205,26 +208,55 @@ func TestBalanceConfig(t *testing.T) {
 	}
 	var parsed struct {
 		Outbounds []map[string]any `json:"outbounds"`
-		Balancing []map[string]any `json:"balancing"`
+		Routing   struct {
+			Rules     []map[string]any `json:"rules"`
+			Balancers []map[string]any `json:"balancers"`
+		} `json:"routing"`
 	}
 	if err := json.Unmarshal(cfg, &parsed); err != nil {
 		t.Fatal(err)
 	}
-	if len(parsed.Balancing) != 1 {
-		t.Fatalf("balancing sections = %d", len(parsed.Balancing))
+	if len(parsed.Routing.Balancers) != 1 {
+		t.Fatalf("balancers = %d", len(parsed.Routing.Balancers))
 	}
-	bal := parsed.Balancing[0]
-	if bal["tag"] != TagProxy || bal["strategy"] != "roundrobin" {
-		t.Fatalf("balancing: %v", bal)
+	bal := parsed.Routing.Balancers[0]
+	if bal["tag"] != TagProxy {
+		t.Fatalf("balancer: %v", bal)
 	}
-	tags := bal["outbounds"].([]any)
+	if strategy, ok := bal["strategy"].(map[string]any); !ok || strategy["type"] != "roundrobin" {
+		t.Fatalf("strategy: %v", bal["strategy"])
+	}
+	tags := bal["selector"].([]any)
 	if len(tags) != 2 || tags[0] != TagBalance+"-1" || tags[1] != TagBalance+"-2" {
 		t.Fatalf("balanced outbounds: %v", tags)
 	}
 	for _, ob := range parsed.Outbounds {
 		if ob["tag"] == TagProxy {
-			t.Fatalf("the proxy must be the balancing tag, not an outbound: %v", ob)
+			t.Fatalf("the proxy must be the balancer tag, not an outbound: %v", ob)
 		}
+	}
+	// The "through VPN" rule and the catch-all must use balancerTag; a rule
+	// with outboundTag "proxy" would break every connection.
+	var userRule, catchAll bool
+	for _, r := range parsed.Routing.Rules {
+		if r["outboundTag"] == TagProxy {
+			t.Fatalf("a rule routes to the balancer with outboundTag: %v", r)
+		}
+		if r["balancerTag"] != TagProxy {
+			continue
+		}
+		if r["domain"] != nil {
+			userRule = true
+		}
+		if r["network"] == "tcp,udp" {
+			catchAll = true
+		}
+	}
+	if !userRule {
+		t.Fatal("the user's through-VPN rule does not use balancerTag")
+	}
+	if !catchAll {
+		t.Fatal("missing the catch-all rule: the default outbound would be bal-1")
 	}
 }
 
@@ -285,5 +317,52 @@ func TestAmneziaVPNLink(t *testing.T) {
 	}
 	if s.Name != "Мой сервер" || s.Protocol != "amneziawg" || strings.Join(s.WG.DNS, ",") != "9.9.9.9,1.0.0.1" {
 		t.Fatalf("%+v %+v", s, s.WG)
+	}
+}
+
+// TestChainAndBalance: both features at once — every balanced outbound is
+// chained through the relay (outboundTag "via"), and Xray accepts it.
+func TestChainAndBalance(t *testing.T) {
+	main, _ := profile.ParseLink(links[0])
+	other, _ := profile.ParseLink(links[1])
+	relay, _ := profile.ParseLink(links[4]) // trojan
+	cfg, err := BuildConfig(main, Options{
+		SocksPort: 10808, HTTPPort: 10809, TUN: true, TunName: "Vlessia", Interface: "Ethernet",
+		ServerAddress: "9.9.9.9",
+		Via:           relay, ViaAddr: "5.5.5.5",
+		Balance: []*profile.Server{main, other}, BalanceAddrs: []string{"1.1.1.1", "2.2.2.2"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := loadConfig(cfg); err != nil {
+		t.Fatalf("xray rejected the chained balancing config: %v\n%s", err, cfg)
+	}
+	var parsed struct {
+		Outbounds []map[string]any `json:"outbounds"`
+		Routing   struct {
+			Balancers []map[string]any `json:"balancers"`
+		} `json:"routing"`
+	}
+	if err := json.Unmarshal(cfg, &parsed); err != nil {
+		t.Fatal(err)
+	}
+	if len(parsed.Routing.Balancers) != 1 {
+		t.Fatalf("balancers = %d", len(parsed.Routing.Balancers))
+	}
+	via, balanced := 0, 0
+	for _, ob := range parsed.Outbounds {
+		switch {
+		case ob["tag"] == TagVia:
+			via++
+			if ob["protocol"] != "trojan" {
+				t.Fatalf("relay outbound: %v", ob)
+			}
+		case ob["outboundTag"] == TagVia:
+			balanced++
+		}
+	}
+	if via != 1 || balanced != 2 {
+		t.Fatalf("relay outbounds = %d, chained members = %d", via, balanced)
 	}
 }

@@ -880,34 +880,20 @@ html.android #autostart-hint { margin-left: 0; }
 
 /* ---------- phone layout ---------- */
 
-/* The dock becomes a compact header and the actions move to a fixed bottom
-   bar within thumb reach. The rows keep their buttons where the desktop has
-   them — at the right, always visible, because a touch screen has no hover. */
+/* The dock stays a compact header with the connect controls in it, as on the
+   desktop. The rows keep their buttons where the desktop has them — at the
+   right, always visible, because a touch screen has no hover. */
 
 html.android .dock-graph,
 html.android .dock-foot { display: none; }
-html.android .dock { padding-bottom: 10px; }
+html.android .dock { padding-bottom: 12px; }
 html.android .status { margin-top: 10px; }
 html.android .status-word { font-size: 24px; }
 html.android .status-server { margin-top: 6px; font-size: 14px; }
 html.android .meters { margin-top: 12px; gap: 16px; }
 html.android .meters dd { font-size: 15px; }
 html.android .totals { font-size: 11.5px; margin-top: 6px; }
-
-html.android .dock-actions {
-  position: fixed;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  z-index: 30;
-  margin: 0;
-  padding: 10px calc(var(--inset-right, 0px) + 14px) calc(var(--inset-bottom, 0px) + 10px) calc(var(--inset-left, 0px) + 14px);
-  background: var(--surface);
-  border-top: 1px solid var(--line);
-  gap: 8px;
-}
-html.android .dock-actions .dock-link { align-self: center; }
-html.android main { padding-bottom: calc(var(--inset-bottom, 0px) + 96px); }
+html.android .dock-actions { padding-top: 14px; gap: 10px; }
 
 html.android .tabs {
   position: sticky;
@@ -920,6 +906,11 @@ html.android .tabs {
 html.android .tab { font-size: 14px; }
 
 html.android .btn { min-height: 34px; }
+
+/* On a phone the row keeps only the actions that matter there: copying a
+   link or picking a relay is a desktop job. */
+html.android .row-actions .btn[data-act="via"],
+html.android .row-actions .btn[data-act="copy"] { display: none; }
 
 /* The row wraps only when the name needs the space: then the buttons drop
    to the next line, still right-aligned. */

@@ -1,192 +1,92 @@
-<div align="center">
-
-<img src="build/appicon.png" width="112" alt="Vlessia">
+<img src="build/appicon.png" width="64" alt="Vlessia">
 
 # Vlessia
 
-**Быстрый и красивый VPN-клиент для Windows, macOS, Linux и Android на базе Xray-core**
+VPN-клиент на Xray-core для Windows, macOS, Linux и Android: VLESS, VMess,
+Trojan, Shadowsocks, Hysteria 2, AmneziaWG, WireGuard, OpenVPN.
 
-VLESS · Hysteria 2 · AmneziaWG · WireGuard · OpenVPN · Outline — в одном окне и одном `.exe`
+[Скачать последнюю версию](https://github.com/feds1337/vlessia/releases/latest) · [Лицензия](LICENSE)
 
-[![Release](https://img.shields.io/github/v/release/feds1337/vlessia?style=for-the-badge&color=0e7c86&label=версия)](https://github.com/feds1337/vlessia/releases/latest)
-[![Downloads](https://img.shields.io/github/downloads/feds1337/vlessia/total?style=for-the-badge&color=0ea5e9&label=загрузки)](https://github.com/feds1337/vlessia/releases)
-[![Platforms](https://img.shields.io/badge/Windows%20%7C%20macOS%20%7C%20Linux%20%7C%20Android-0e7c86?style=for-the-badge&label=%D1%81%D0%B8%D1%81%D1%82%D0%B5%D0%BC%D1%8B)](#-установка)
-[![License](https://img.shields.io/github/license/feds1337/vlessia?style=for-the-badge&color=a855f7&label=лицензия)](LICENSE)
+<img src="docs/screenshots/servers.png" width="720" alt="Главное окно">
 
-### [⬇️ Скачать последнюю версию](https://github.com/feds1337/vlessia/releases/latest)
+## Возможности
 
-<img src="docs/screenshots/servers.png" width="820" alt="Главное окно Vlessia">
+- Два режима: системный прокси и «весь трафик» (TUN-адаптер).
+- Подписки: остаток трафика, срок действия, анонсы, автообновление и напоминания.
+- Автопереподключение: сторож соединения, смена сети, пробуждение, переход на самый быстрый сервер.
+- Kill switch, цепочка через второй сервер, балансировка между серверами подписки.
+- Правила для сайтов, IP и приложений; на Android — раздельный туннель по приложениям.
+- Автозапуск, автообновление, русский и английский интерфейс.
 
-</div>
+## Протоколы
 
----
+| Протокол | Как добавить |
+|---|---|
+| VLESS — REALITY, XTLS Vision, TCP/WS/gRPC/XHTTP/HTTPUpgrade | `vless://`, подписка |
+| VMess, Trojan | `vmess://`, `trojan://` |
+| Shadowsocks, Outline | `ss://`, `ssconf://` |
+| Hysteria 2 — salamander, port hopping, Brutal | `hysteria2://`, `hy2://` |
+| AmneziaWG 1.0–3.1 | `.conf`, `vpn://` |
+| WireGuard | `.conf`, `wireguard://` |
+| OpenVPN — tls-auth/crypt, UDP и TCP | `.ovpn` |
+| SOCKS5, HTTP(S) | `socks://`, `http://host:port` |
 
-## ✨ Почему Vlessia
+## Установка
 
-<table>
-<tr>
-<td width="50%" valign="top">
+Файлы для всех систем — на [странице релиза](https://github.com/feds1337/vlessia/releases/latest).
 
-### 🚀 Один клик — и вы в сети
-Скопировали ссылку или подписку → «Вставить из буфера» → большая кнопка. Всё. QR-код тоже подойдёт: на телефоне — камерой, на компьютере — прямо с экрана или из картинки.
+| Система | Файл |
+|---|---|
+| Windows 10/11 | `…-setup.exe`, без установки — `…-portable.exe` |
+| macOS 11+, Intel и Apple Silicon | `…-macos-universal.dmg` |
+| Ubuntu / Debian | `vlessia_…_amd64.deb` |
+| Другие Linux (GTK 3, WebKitGTK 4.1) | `…-linux-amd64.tar.gz` |
+| Android 7+ | `…-android-arm64-v8a.apk` или `…-universal.apk` |
 
-### 🛡️ Два режима
-**Прокси** — без прав администратора, для браузеров и большинства программ.
-**Весь трафик** — вся система через VPN, включая игры и консольные утилиты.
+Сборки не подписаны: Windows покажет SmartScreen — «Подробнее» → «Выполнить
+в любом случае»; на macOS откройте приложение правой кнопкой → «Открыть», а если
+система пишет, что оно повреждено, — `xattr -cr /Applications/Vlessia.app`.
 
-### 📦 Подписки как надо
-Остаток гигабайт, срок действия, анонсы провайдера, ссылки на поддержку, автообновление и напоминания, когда трафик заканчивается или подписка истекает.
-
-### 🕳️ Kill switch
-VPN выключили или он оборвался — интернет гаснет вместе с ним: адаптер остаётся включённым, а трафик уходит в пустоту. Утечек нет ни на секунду.
-
-</td>
-<td width="50%" valign="top">
-
-### 🧩 Почти любые протоколы
-От VLESS REALITY до AmneziaWG 3.1 и OpenVPN — без установки сторонних программ.
-
-### 🏁 Запуск вместе с системой
-Автозапуск сразу в трей и автоподключение — даже в режиме «Весь трафик», без окна UAC. На Android — «Постоянный VPN» и плитка в шторке.
-
-### 🔄 Обновляется сам
-Находит новую версию на GitHub, проверяет контрольную сумму и ставит её в один клик (а на Android — скачивает и обновляет автоматически).
-
-### 🔁 Не отваливается
-Сам проверяет соединение и переподключается, а если сервер умер — переходит на самый быстрый из подписки. Может и сразу подключаться к самому быстрому.
-
-### 🔗 Цепочки и балансировка
-Трафик можно пустить через второй сервер — например, Hysteria 2 через VLESS-ретранслятор. А можно разложить новые соединения между всеми серверами подписки: поровну или на самый быстрый по задержке. Мёртвые серверы в группу не попадают.
-
-### 🌐 Переживает смену сети
-Проснулся ноутбук, переключился Wi-Fi на кабель или на мобильный интернет — клиент сам переподключится, не дожидаясь, пока сторож заметит обрыв.
-
-### 🧭 Свои правила
-Списки сайтов и IP, что всегда через VPN, а что напрямую — например, банки и госуслуги. Плюс правила по приложениям: `chrome.exe` всегда через VPN, `steam.exe` всегда напрямую. На Android — раздельный туннель по приложениям.
-
-### 🎨 Приятные мелочи
-Флаги стран, пинг серверов, график скорости и трафик за день, плавные анимации (выключаются в настройках), светлая и тёмная тема вслед за Windows, значок в трее. Интерфейс — на русском и английском, переключается в настройках. И тихий мягкий звук при подключении 🔔 — включается в настройках.
-
-</td>
-</tr>
-</table>
-
-<div align="center">
-<img src="docs/screenshots/subscriptions.png" width="49%" alt="Подписки">
-<img src="docs/screenshots/settings.png" width="49%" alt="Настройки">
-</div>
-
-## 🔌 Протоколы
-
-| Протокол | Как добавить | Что поддерживается |
-|---|---|---|
-| **VLESS** | `vless://`, подписка | REALITY, XTLS Vision, TCP · WS · gRPC · XHTTP · HTTPUpgrade, VLESS-encryption |
-| **VMess · Trojan** | `vmess://`, `trojan://` | TLS, все транспорты Xray |
-| **Shadowsocks · Outline** | `ss://`, `ssconf://` | SIP002 и старый формат, динамические ключи Outline |
-| **Hysteria 2** | `hysteria2://`, `hy2://` | salamander, port hopping, Brutal, самоподписанные сертификаты |
-| **AmneziaWG** | `.conf`, `vpn://` из AmneziaVPN | версии 1.0 – 3.1, включая `HeaderProtectionKey` и `RandomTrailers` |
-| **WireGuard** | `.conf`, `wireguard://` | ссылки форматов v2rayN, sing-box, Hiddify |
-| **OpenVPN** | `.ovpn` | tls-auth / tls-crypt / tls-crypt-v2, UDP и TCP, логин и пароль |
-| **SOCKS5 · HTTP(S)** | `socks://`, `http://хост:порт` | с логином и паролем |
-
-## 📥 Установка
-
-Скачайте файл для своей системы со страницы [Releases](https://github.com/feds1337/vlessia/releases/latest):
-
-| Система | Файл | Как установить |
-|---|---|---|
-| **Windows 10 / 11** | `Vlessia-…-setup.exe` | Запустите установщик. Без установки — `…-portable.exe` |
-| **macOS 11+** (Intel и Apple Silicon) | `Vlessia-…-macos-universal.dmg` | Перетащите Vlessia в «Программы». При первом запуске — см. примечание ниже |
-| **Ubuntu / Debian** | `vlessia_…_amd64.deb` | `sudo apt install ./vlessia_…_amd64.deb` |
-| **Другие Linux** | `vlessia-…-linux-amd64.tar.gz` | Распакуйте и запустите `./vlessia` (нужны GTK 3 и WebKitGTK 4.1) |
-| **Android 7+** | `Vlessia-…-android-arm64-v8a.apk` | Откройте APK на телефоне и разрешите установку. Для старых 32-битных телефонов — `…-armeabi-v7a.apk`, не уверены — `…-universal.apk` |
-
-Дальше одинаково: скопируйте ссылку на сервер или подписку, нажмите **«Вставить»** и большую кнопку подключения. 🎉
-
-> [!TIP]
-> Не хотите устанавливать? Берите **`Vlessia-…-portable.exe`** — он работает без установки.
-
-> [!NOTE]
-> Сборки пока не подписаны сертификатами разработчика. **Windows:** SmartScreen может предупредить о «неизвестном издателе» — нажмите «Подробнее» → «Выполнить в любом случае». **macOS:** при первом запуске нажмите на Vlessia в «Программах» правой кнопкой → «Открыть» → «Открыть»; если система пишет, что приложение повреждено, выполните в Терминале `xattr -cr /Applications/Vlessia.app`.
-
-## ❓ Вопросы и ответы
+Права администратора нужны только режиму «весь трафик»: создавать адаптер и менять
+маршруты система разрешает лишь администратору. На macOS и Linux клиент при этом
+остаётся обычной программой и запрашивает пароль для служебного процесса.
 
 <details>
-<summary><b>«Прокси» или «Весь трафик» — что выбрать?</b></summary>
+<summary>Ограничения</summary>
 
-**Прокси** подходит для браузеров, мессенджеров и большинства программ и не требует прав администратора. **Весь трафик** создаёт виртуальный сетевой адаптер (TUN) и заворачивает в VPN вообще всё — игры, торренты, консольные утилиты. WireGuard, AmneziaWG и OpenVPN всегда работают в этом режиме.
+- Android работает только в режиме «весь трафик»: режима «Прокси» там нет. Пинг
+  серверов идёт напрямую, в обход VPN.
+- macOS: значка в строке меню нет — окно сворачивается в Dock, выход через
+  «Vlessia → Выйти» (⌘Q).
+- Linux: трей работает в окружениях с StatusNotifierItem (в GNOME нужно расширение
+  AppIndicator); для «весь трафик» нужен `pkexec`.
+- Плагины Shadowsocks (`?plugin=`) и маскировка Outline `prefix` не поддерживаются.
+- AmneziaWG: параметры J1–J3 и Itime из версии 1.5 пропускаются.
+- OpenVPN: без сжатия, CBC-шифров, `dev tap` и статических ключей — нужен
+  tls-auth / tls-crypt.
+- WireGuard, AmneziaWG и OpenVPN по UDP не отвечают на пинг — проверяйте подключением.
 
-На Linux режим «Прокси» настраивается автоматически в GNOME и KDE Plasma; в других окружениях укажите HTTP-прокси `127.0.0.1:10809` вручную или используйте «Весь трафик».
 </details>
 
-<details>
-<summary><b>Почему клиент просит права администратора?</b></summary>
+## Сборка
 
-Только для режима «Весь трафик»: создавать сетевые адаптеры и менять маршруты система разрешает лишь администратору. **Windows:** клиент предложит перезапуститься с нужными правами. **macOS и Linux:** клиент остаётся обычной программой, а при подключении система попросит пароль администратора для служебного процесса, который создаёт адаптер и маршруты. Режиму «Прокси» права не нужны.
-</details>
-
-<details>
-<summary><b>Как сделать, чтобы VPN включался сам при входе в Windows?</b></summary>
-
-Откройте **Настройки → Запуск** и включите «Запускать вместе с Windows» (на macOS и Linux — при входе в систему) и «Подключаться при запуске». На Windows для режима «Весь трафик» включайте автозапуск, запустив Vlessia от имени администратора: тогда клиент будет стартовать с нужными правами без окна UAC. На macOS и Linux система попросит пароль при автоподключении в режиме «Весь трафик».
-</details>
-
-<details>
-<summary><b>Как обновить клиент?</b></summary>
-
-Клиент проверяет GitHub после запуска и раз в 6 часов. Когда выходит новая версия, в левой колонке появляется «Доступна версия…». **Windows:** нажмите «Обновить» — клиент скачает установщик, сверит контрольную сумму, обновится и перезапустится, а если VPN был включён — подключится снова. **Android:** клиент сам скачивает APK для вашего телефона, сверяет контрольную сумму и автоматически запускает обновление (на Android 12+ при повторных обновлениях — полностью фоново, а при первом обновлении попросит разрешить установку для Vlessia). **macOS, Linux и portable-версия:** кнопка откроет страницу релиза, откуда нужно скачать новую версию. Автопроверку можно выключить в настройках.
-</details>
-
-<details>
-<summary><b>Подписка не показывает остаток трафика</b></summary>
-
-Клиент берёт эти данные из ответа сервера подписки (`subscription-userinfo` и другие заголовки, а также служебные строки в теле подписки). Если провайдер их не присылает, показать нечего — карточка подписки так и напишет.
-</details>
-
-<details>
-<summary><b>Где хранятся мои серверы и как всё удалить?</b></summary>
-
-Настройки, серверы и логи лежат в `%APPDATA%\Vlessia` (кнопка «Открыть папку данных» в настройках). Удаляется клиент через «Параметры → Приложения»: установщик уберёт автозапуск и возврат системного прокси, а ваши серверы оставит на случай переустановки.
-</details>
-
-<details>
-<summary><b>Как включать VPN на Android без открытия приложения?</b></summary>
-
-Добавьте плитку **Vlessia** в шторку быстрых настроек — она подключает выбранный сервер и отключает VPN. Чтобы VPN включался сам после перезагрузки телефона, откройте **Настройки → Запуск → «Открыть настройки VPN»** и включите для Vlessia «Постоянный VPN». Ссылки и подписки можно отправлять в Vlessia из других приложений через «Поделиться».
-</details>
-
-<details>
-<summary><b>Известные ограничения</b></summary>
-
-- Windows 10 / 11 (x64), macOS 11+ (Intel и Apple Silicon), Linux x64 с GTK 3 и WebKitGTK 4.1, Android 7+ (ARM64, ARMv7, x86_64).
-- Android: всегда «Весь трафик» через системный VPN — режима «Прокси» нет. Локальные SOCKS5 и HTTP-прокси (`127.0.0.1:10808` / `10809`) при подключении тоже доступны другим приложениям. Пинг серверов идёт напрямую, в обход VPN.
-- macOS: значка в строке меню нет — при закрытии окно сворачивается в Dock, выход через меню «Vlessia → Выйти» (⌘Q). В режиме «Весь трафик» пароль администратора запрашивается при каждом подключении.
-- Linux: значок в трее показывается в окружениях с поддержкой StatusNotifierItem (KDE и большинство других; в GNOME нужно расширение AppIndicator). Для «Весь трафик» нужен `pkexec` (polkit).
-- Параметр `allowInsecure` в Xray удалён (с 01.06.2026); вместо него поддерживаются `pcs` (pinnedPeerCertSha256) и `vcn` (verifyPeerCertByName). Для Hysteria 2 с `insecure=1` сертификат закрепляется автоматически.
-- Плагины Shadowsocks (`?plugin=`) не поддерживаются; маскировка Outline `prefix` тоже (подключение работает без неё).
-- AmneziaWG: параметры J1–J3 и Itime из промежуточной версии 1.5 пропускаются. Из ссылок `vpn://` импортируются только контейнеры AWG / WireGuard.
-- OpenVPN: не поддерживаются сжатие (`comp-lzo`, `compress`), шифры CBC, `dev tap`, статические ключи и профили без tls-auth / tls-crypt — клиент сообщит об этом при импорте.
-- WireGuard, AmneziaWG и OpenVPN по UDP не отвечают на пинг — проверяйте их подключением.
-</details>
-
-## 🛠️ Для разработчиков
-
-Vlessia написан на Go: [Xray-core](https://github.com/XTLS/Xray-core) встроен как библиотека, интерфейс на [Wails](https://wails.io) (WebView2). Android-версия — то же ядро, собранное gomobile, и тот же интерфейс в WebView. Сборка, тесты, выпуск релизов и устройство клиента — в **[docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)**.
+Go 1.27+, [Wails](https://wails.io) v2; для Android — gomobile и NDK.
 
 ```bash
-wails build -clean -trimpath -ldflags "-s -w" -nsis
+wails build -clean -trimpath -ldflags "-s -w"
 ```
 
-## 💚 Благодарности
+Устройство клиента, тесты и выпуск релизов — в [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
 
-- [Xray-core](https://github.com/XTLS/Xray-core) — сердце клиента (MPL-2.0)
-- [amneziawg-go](https://github.com/amnezia-vpn/amneziawg-go) — AmneziaWG и WireGuard (MIT)
-- [go-openvpn](https://github.com/n0madic/go-openvpn) — OpenVPN (AGPL-3.0)
-- [Wails](https://wails.io) — десктопная оболочка (MIT)
-- [Wintun](https://www.wintun.net/) — драйвер TUN, © WireGuard LLC, распространяется по [лицензии Prebuilt Binaries](internal/tun/wintun-LICENSE.txt) и используется только через штатный API
-- [Onest](https://github.com/simpals/onest) — шрифт интерфейса (SIL OFL 1.1, текст в `frontend/dist/fonts/Onest-LICENSE.txt`)
-- [Twemoji Country Flags](https://github.com/talkjs/country-flag-emoji-polyfill) — флаги (MIT; изображения [Twemoji](https://github.com/twitter/twemoji), © Twitter, Inc. и др., [CC-BY 4.0](https://creativecommons.org/licenses/by/4.0/), полный текст в `frontend/dist/fonts/`)
+## Лицензия
 
-## 📄 Лицензия
+[AGPL-3.0](LICENSE). Для личного использования ограничений нет; при распространении
+изменённого клиента или предоставлении его как сервиса нужно открыть исходный код —
+этого требует встроенный go-openvpn.
 
-[AGPL-3.0](LICENSE). Для личного использования ограничений нет. Если распространяете изменённый клиент или предоставляете его как сервис, нужно открыть исходный код — этого требует встроенный go-openvpn.
+Используется: [Xray-core](https://github.com/XTLS/Xray-core) (MPL-2.0),
+[amneziawg-go](https://github.com/amnezia-vpn/amneziawg-go) (MIT),
+[go-openvpn](https://github.com/n0madic/go-openvpn) (AGPL-3.0),
+[Wails](https://wails.io) (MIT), Wintun (© WireGuard LLC,
+[лицензия](internal/tun/wintun-LICENSE.txt)), шрифт Onest (SIL OFL 1.1),
+флаги Twemoji (CC-BY 4.0).

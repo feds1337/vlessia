@@ -880,9 +880,9 @@ html.android #autostart-hint { margin-left: 0; }
 
 /* ---------- phone layout ---------- */
 
-/* The dock becomes a compact header, the actions move to a fixed bottom bar
-   within thumb reach, and the rows fold their buttons behind „…". */
-.row-more { display: none; }
+/* The dock becomes a compact header and the actions move to a fixed bottom
+   bar within thumb reach. The rows keep their buttons where the desktop has
+   them — at the right, always visible, because a touch screen has no hover. */
 
 html.android .dock-graph,
 html.android .dock-foot { display: none; }
@@ -921,18 +921,17 @@ html.android .tab { font-size: 14px; }
 
 html.android .btn { min-height: 34px; }
 
+/* The row wraps only when the name needs the space: then the buttons drop
+   to the next line, still right-aligned. */
 html.android .row { flex-wrap: wrap; }
-html.android .row-actions .btn:not([data-act="more"]) { display: none; }
-html.android .row-actions .btn[data-act="more"] { display: inline-flex; }
-html.android .row.open .row-actions {
-  order: 3;
-  width: 100%;
-  justify-content: flex-end;
+html.android .row-main { min-width: 118px; }
+html.android .row-actions {
+  display: flex;
   flex-wrap: wrap;
+  justify-content: flex-end;
   gap: 6px;
-  padding-top: 4px;
+  order: 3;
 }
-html.android .row.open .row-actions .btn { display: inline-flex; }
 
 html.android dialog {
   margin: auto auto 0;
@@ -942,6 +941,3 @@ html.android dialog {
   max-height: 88vh;
 }
 html.android dialog form { padding-bottom: calc(var(--inset-bottom, 0px) + 14px); }
-
-html.android .row-actions { display: flex; }
-html.android .row-actions .btn[data-act="more"] { min-width: 38px; }

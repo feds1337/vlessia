@@ -15,6 +15,7 @@ import (
 	"github.com/makiuchi-d/gozxing"
 	"github.com/makiuchi-d/gozxing/qrcode"
 
+	"github.com/feds1337/vlessia/internal/profile"
 	"github.com/feds1337/vlessia/internal/store"
 )
 
@@ -126,5 +127,43 @@ func TestImportQRFileAndWelcome(t *testing.T) {
 	}
 	if err := l.SetWelcomeSeen(); err != nil || l.WelcomePending() {
 		t.Fatalf("welcome still pending: %v", err)
+	}
+}
+
+// TestDeleteServerGuard: a manually added server can be deleted, one that
+// belongs to a subscription cannot — the subscription owns it, and the next
+// refresh would bring it straight back.
+func TestDeleteServerGuard(t *testing.T) {
+	l := newLibrary(t)
+	if _, err := l.ImportText("vless://11111111-1111-1111-1111-111111111111@1.2.3.4:443#manual"); err != nil {
+		t.Fatal(err)
+	}
+	manual := l.Selected()
+	if manual == nil {
+		t.Fatal("no server imported")
+	}
+	if err := l.DeleteServer(manual.ID); err != nil {
+		t.Fatalf("a manual server must be deletable: %v", err)
+	}
+	if l.Store.Server(manual.ID) != nil {
+		t.Fatal("the manual server is still there")
+	}
+
+	if err := l.Store.Update(func(d *store.Data) {
+		d.Subscriptions = append(d.Subscriptions, &store.Subscription{ID: "sub1", URL: "https://example.com/sub"})
+		d.Servers = append(d.Servers, &profile.Server{
+			ID: "s1", Name: "sub server", Protocol: "vless", Address: "1.1.1.1", Port: 443, SubID: "sub1",
+		})
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := l.DeleteServer("s1"); err == nil {
+		t.Fatal("a server from a subscription must not be deletable")
+	}
+	if l.Store.Server("s1") == nil {
+		t.Fatal("the subscription server was removed anyway")
+	}
+	if err := l.DeleteServer("missing"); err == nil {
+		t.Fatal("deleting an unknown server should fail")
 	}
 }

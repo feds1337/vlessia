@@ -488,6 +488,7 @@ const GO_EXACT = {
     "выберите сервер": "Select a server",
     "сервер не найден": "Server not found",
     "сервер для цепочки не найден": "The chain server is not found",
+    "сервер из подписки удалить нельзя": "A server from a subscription cannot be deleted",
     "неизвестный режим": "Unknown mode",
     "неверные порты": "Invalid ports",
     "файл слишком большой": "The file is too large",

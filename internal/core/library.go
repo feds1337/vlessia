@@ -195,7 +195,17 @@ func (l *Library) SetOpenVPNCredentials(id, user, pass string) error {
 	return err
 }
 
+// DeleteServer removes a manually added server. A server that came from a
+// subscription cannot be deleted: the subscription owns it, and the next
+// refresh would bring it straight back.
 func (l *Library) DeleteServer(id string) error {
+	srv := l.Store.Server(id)
+	if srv == nil {
+		return errors.New("сервер не найден")
+	}
+	if srv.SubID != "" {
+		return errors.New("сервер из подписки удалить нельзя")
+	}
 	err := l.Store.Update(func(d *store.Data) {
 		out := d.Servers[:0]
 		for _, s := range d.Servers {

@@ -148,8 +148,7 @@ function renderServers() {
           ${s.ovpn?.needAuth ? `<button class="btn ghost small" data-act="login">${esc(t("servers.login"))}</button>` : ""}
           <button class="btn ghost small" data-act="via" title="${relay ? esc(t("servers.via_set", relay.name)) : esc(t("d.via_title"))}">${esc(t("servers.via"))}</button>
           <button class="btn ghost small" data-act="copy">${esc(t("servers.copy"))}</button>
-          <button class="btn ghost small" data-act="del">${esc(t("servers.del"))}</button>
-          <button class="btn ghost small row-more" data-act="more" aria-label="…" title="…">⋯</button>
+          ${s.subId ? "" : `<button class="btn ghost small" data-act="del">${esc(t("servers.del"))}</button>`}
         </div>
         ${pingCell(s.id)}
       </div>`;
@@ -943,10 +942,6 @@ function bind() {
     if (row.dataset.auto) return toggleAuto();
     const id = row.dataset.id;
     const act = e.target.closest("[data-act]")?.dataset.act;
-    if (act === "more") {
-      row.classList.toggle("open");
-      return;
-    }
     if (act === "copy") {
       const isConf = !state.servers.find((x) => x.id === id)?.link.includes("://");
       return call("CopyLink", id).then(() => toast(isConf ? t("toast.copied_conf") : t("toast.copied_link"))).catch(() => {});

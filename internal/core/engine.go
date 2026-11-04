@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"sync"
 	"syscall"
+	"time"
 
 	"github.com/feds1337/vlessia/internal/awg"
 	"github.com/feds1337/vlessia/internal/hysteria"
@@ -70,21 +71,29 @@ func EffectiveMode(srv *profile.Server, mode string) string {
 // full tunnels — each of those needs its own bridge, so they cannot be a
 // member of a balancing group.
 //
-// addrs holds the addresses resolved in advance, which TUN mode needs: once
-// the tunnel is up the system DNS goes into it, and a server could not be
-// resolved for the very connection it has to carry. In proxy mode the names
-// are used as is, so addrs is empty.
+// The members that do not answer are dropped first, so a dead server does
+// not take its share of the new connections. addrs holds the addresses
+// resolved in advance, which TUN mode needs: once the tunnel is up the
+// system DNS goes into it, and a server could not be resolved for the very
+// connection it has to carry. In proxy mode the names are used as is, so
+// addrs is empty.
 func balanceGroup(lib *Library, srv *profile.Server, settings store.Settings, logger *log.Logger) (group []*profile.Server, addrs []string, ok bool) {
 	if !settings.Balance || srv.IsFullTunnel() {
 		return nil, nil, false
 	}
+	var all []*profile.Server
 	for _, s := range lib.AllServers() {
 		if s.SubID == srv.SubID && !s.IsFullTunnel() {
-			group = append(group, s)
+			all = append(all, s)
 		}
 	}
-	if len(group) < 2 {
+	if len(all) < 2 {
 		logger.Printf("балансировка: в группе меньше двух серверов, подключаю напрямую")
+		return nil, nil, false
+	}
+	group = healthyGroup(all, logger)
+	if len(group) < 2 {
+		logger.Printf("балансировка: живых серверов в группе %d из %d, подключаюсь напрямую", len(group), len(all))
 		return nil, nil, false
 	}
 	if settings.Mode != "tun" {
@@ -118,6 +127,35 @@ func balanceGroup(lib *Library, srv *profile.Server, settings store.Settings, lo
 	return group, addrs, true
 }
 
+// healthyGroup pings the servers in parallel and keeps those that answer.
+// Protocols that cannot be pinged at all (-2: WireGuard, UDP OpenVPN) are
+// kept: nothing is known about them, and dropping them would shrink the
+// group for no reason.
+func healthyGroup(servers []*profile.Server, logger *log.Logger) []*profile.Server {
+	dialer := &net.Dialer{Timeout: 3 * time.Second}
+	alive := make([]bool, len(servers))
+	var wg sync.WaitGroup
+	for i, s := range servers {
+		wg.Add(1)
+		go func(i int, s *profile.Server) {
+			defer wg.Done()
+			ms := PingServer(s, dialer)
+			alive[i] = ms != -1
+			if ms == -1 {
+				logger.Printf("балансировка: %s не отвечает, пропускаю", s.Name)
+			}
+		}(i, s)
+	}
+	wg.Wait()
+	out := make([]*profile.Server, 0, len(servers))
+	for i, s := range servers {
+		if alive[i] {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
 // StartEngine launches everything needed for srv in settings.Mode: the
 // WireGuard/AmneziaWG/OpenVPN bridge if any, then Xray. dir receives
 // xray.log and xray-config.json. srv is a copy and may be modified.
@@ -129,6 +167,8 @@ func StartEngine(lib *Library, srv *profile.Server, settings store.Settings, dir
 		BypassRU:    settings.BypassRU,
 		DirectRules: settings.DirectRules,
 		ProxyRules:  settings.ProxyRules,
+		DirectApps:  settings.DirectApps,
+		ProxyApps:   settings.ProxyApps,
 		DNS:         settings.DNS,
 		LogFile:     filepath.Join(dir, "xray.log"),
 		LogLevel:    settings.LogLevel,
@@ -293,6 +333,7 @@ func StartEngine(lib *Library, srv *profile.Server, settings store.Settings, dir
 	if group, addrs, ok := balanceGroup(lib, srv, settings, logger); ok {
 		opts.Balance = group
 		opts.BalanceAddrs = addrs // empty in proxy mode: the names are used as is
+		opts.BalanceStrategy = settings.BalanceStrategy
 		e.Bypass = append(e.Bypass, addrs...)
 	}
 

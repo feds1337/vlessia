@@ -3,6 +3,7 @@ package core
 import (
 	"io"
 	"log"
+	"net"
 	"path/filepath"
 	"testing"
 
@@ -10,8 +11,40 @@ import (
 	"github.com/feds1337/vlessia/internal/store"
 )
 
-// balanceLibrary builds a Library over a temporary store holding servers and
-// returns the copy of the requested one.
+// livePort returns a loopback port that accepts connections, so the health
+// check of the balancing group sees the servers as alive.
+func livePort(t *testing.T) int {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { ln.Close() })
+	go func() {
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			_ = c.Close()
+		}
+	}()
+	return ln.Addr().(*net.TCPAddr).Port
+}
+
+// deadPort returns a loopback port nothing listens on.
+func deadPort(t *testing.T) int {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	port := ln.Addr().(*net.TCPAddr).Port
+	_ = ln.Close()
+	return port
+}
+
+// balanceLibrary builds a Library over a temporary store holding servers.
 func balanceLibrary(t *testing.T, servers ...*profile.Server) (*Library, *store.Store) {
 	t.Helper()
 	dir := filepath.Join(t.TempDir(), "data")
@@ -40,16 +73,20 @@ func setBalance(t *testing.T, st *store.Store, balance bool, mode string) store.
 }
 
 // TestBalanceGroup: the group is the selected server's subscription without
-// the full tunnels, and proxy mode does not need resolved addresses — the
-// bug that turned balancing off in the default mode.
+// the full tunnels and without the servers that do not answer; proxy mode
+// needs no resolved addresses — the bug that turned balancing off in the
+// default mode.
 func TestBalanceGroup(t *testing.T) {
-	vless := func(id string, sub string) *profile.Server {
-		return &profile.Server{ID: id, Name: id, Protocol: "vless", Address: "127.0.0.1", Port: 443, SubID: sub}
+	port := livePort(t)
+	vless := func(id, sub string, port int) *profile.Server {
+		return &profile.Server{ID: id, Name: id, Protocol: "vless", Address: "127.0.0.1", Port: port, SubID: sub}
 	}
+	dead := deadPort(t)
 	lib, st := balanceLibrary(t,
-		vless("a", "sub"), vless("b", "sub"), vless("c", "other"),
-		&profile.Server{ID: "wg", Name: "wg", Protocol: "wireguard", Address: "127.0.0.1", Port: 51820, SubID: "sub", WG: &profile.WireGuard{}},
-		vless("manual", ""),
+		vless("a", "sub", port), vless("b", "sub", port), vless("dead", "sub", dead),
+		vless("other", "other", port),
+		&profile.Server{ID: "wg", Name: "wg", Protocol: "wireguard", Address: "127.0.0.1", Port: port, SubID: "sub", WG: &profile.WireGuard{}},
+		vless("manual", "", port),
 	)
 	srv := lib.Store.Server("a")
 	logger := log.New(io.Discard, "", 0)
@@ -67,10 +104,22 @@ func TestBalanceGroup(t *testing.T) {
 			t.Fatal("balancing must work in proxy mode")
 		}
 		if len(group) != 2 {
-			t.Fatalf("group = %d, want the two vless servers of the subscription", len(group))
+			t.Fatalf("group = %d, want the two alive vless servers of the subscription", len(group))
 		}
 		if len(addrs) != 0 {
 			t.Fatalf("proxy mode must not pre-resolve: %v", addrs)
+		}
+	})
+	t.Run("dead member is dropped", func(t *testing.T) {
+		settings := setBalance(t, st, true, "proxy")
+		group, _, ok := balanceGroup(lib, srv, settings, logger)
+		if !ok {
+			t.Fatal("balancing must work")
+		}
+		for _, s := range group {
+			if s.ID == "dead" {
+				t.Fatal("a server that does not answer must not take a share of the connections")
+			}
 		}
 	})
 	t.Run("tun mode", func(t *testing.T) {
@@ -97,7 +146,7 @@ func TestBalanceGroup(t *testing.T) {
 	})
 	t.Run("single server in the subscription", func(t *testing.T) {
 		settings := setBalance(t, st, true, "proxy")
-		if _, _, ok := balanceGroup(lib, lib.Store.Server("c"), settings, logger); ok {
+		if _, _, ok := balanceGroup(lib, lib.Store.Server("other"), settings, logger); ok {
 			t.Fatal("one server is not a group")
 		}
 	})

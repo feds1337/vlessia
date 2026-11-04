@@ -14,6 +14,8 @@ import android.os.Looper
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
 import io.github.feds1337.vlessia.mobile.Mobile
+import org.json.JSONArray
+import org.json.JSONObject
 import java.io.IOException
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -47,8 +49,10 @@ class VlessiaVpnService : VpnService() {
          * Starts the service in the foreground if needed and establishes the
          * VPN interface. Blocks; called from the Go core, never the main thread.
          * Returns the interface's file descriptor, which then belongs to Go.
+         * split is a JSON object {"mode":"allow"|"block","apps":[package…]}
+         * that decides which apps are inside the tunnel.
          */
-        fun establish(context: Context, dns: String): Int {
+        fun establish(context: Context, dns: String, split: String): Int {
             val service = instance ?: run {
                 val latch = CountDownLatch(1)
                 started = latch
@@ -58,7 +62,7 @@ class VlessiaVpnService : VpnService() {
                 if (!latch.await(10, TimeUnit.SECONDS)) throw IOException("служба VPN не запустилась")
                 instance ?: throw IOException("служба VPN остановлена")
             }
-            return service.openInterface(dns)
+            return service.openInterface(dns, split)
         }
 
         /** The VPN interface was closed by the core. */
@@ -114,15 +118,33 @@ class VlessiaVpnService : VpnService() {
         return START_NOT_STICKY
     }
 
-    private fun openInterface(dns: String): Int {
+    private fun openInterface(dns: String, split: String): Int {
         val builder = Builder()
             .setSession(getString(R.string.app_name))
             .setMtu(1500)
             .addAddress("172.19.0.1", 30)
             .addRoute("0.0.0.0", 0)
             .addDnsServer(dns)
-            .addDisallowedApplication(packageName)
             .setConfigureIntent(openAppIntent())
+        // Which apps are inside the tunnel. Allowed and disallowed apps cannot
+        // be mixed, so it is one list or the other; the client itself always
+        // stays out, it needs the network for subscriptions and updates.
+        val mode = runCatching { JSONObject(split).optString("mode", "") }.getOrDefault("")
+        val apps = runCatching {
+            val arr = JSONObject(split).optJSONArray("apps") ?: JSONArray()
+            (0 until arr.length()).mapNotNull { arr.optString(it, "").takeIf { p -> p.isNotEmpty() } }
+        }.getOrDefault(emptyList())
+        val others = apps.filter { it != packageName }
+        when {
+            mode == "allow" && others.isNotEmpty() -> others.forEach {
+                runCatching { builder.addAllowedApplication(it) }
+            }
+            mode == "block" -> {
+                others.forEach { runCatching { builder.addDisallowedApplication(it) } }
+                builder.addDisallowedApplication(packageName)
+            }
+            else -> builder.addDisallowedApplication(packageName)
+        }
         // IPv6 is captured too, so it cannot leak around the VPN.
         runCatching {
             builder.addAddress("fdfe:dcba:9876::1", 126)

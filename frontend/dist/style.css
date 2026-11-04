@@ -854,3 +854,94 @@ html.android #autostart-hint { margin-left: 0; }
   text-underline-offset: 3px;
 }
 .text-link:hover { text-decoration-color: currentColor; }
+
+/* ---------- applications picker (Android) ---------- */
+
+.apps-list {
+  max-height: 44vh;
+  overflow-y: auto;
+  margin: 2px 0 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+.apps-list label {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--line);
+  cursor: pointer;
+}
+.apps-list label:last-child { border-bottom: 0; }
+.apps-list input { width: 16px; height: 16px; accent-color: var(--lagoon); flex: none; }
+.apps-list .app-name { font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.apps-list .app-pkg { color: var(--muted); font-size: 11px; margin-left: auto; flex: none; }
+.apps-list .empty { padding: 18px; text-align: center; color: var(--muted); font-size: 13px; }
+
+/* ---------- phone layout ---------- */
+
+/* The dock becomes a compact header, the actions move to a fixed bottom bar
+   within thumb reach, and the rows fold their buttons behind „…". */
+.row-more { display: none; }
+
+html.android .dock-graph,
+html.android .dock-foot { display: none; }
+html.android .dock { padding-bottom: 10px; }
+html.android .status { margin-top: 10px; }
+html.android .status-word { font-size: 24px; }
+html.android .status-server { margin-top: 6px; font-size: 14px; }
+html.android .meters { margin-top: 12px; gap: 16px; }
+html.android .meters dd { font-size: 15px; }
+html.android .totals { font-size: 11.5px; margin-top: 6px; }
+
+html.android .dock-actions {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 30;
+  margin: 0;
+  padding: 10px calc(var(--inset-right, 0px) + 14px) calc(var(--inset-bottom, 0px) + 10px) calc(var(--inset-left, 0px) + 14px);
+  background: var(--surface);
+  border-top: 1px solid var(--line);
+  gap: 8px;
+}
+html.android .dock-actions .dock-link { align-self: center; }
+html.android main { padding-bottom: calc(var(--inset-bottom, 0px) + 96px); }
+
+html.android .tabs {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: var(--paper);
+  margin: 0 -16px;
+  padding: 0 16px;
+}
+html.android .tab { font-size: 14px; }
+
+html.android .btn { min-height: 34px; }
+
+html.android .row { flex-wrap: wrap; }
+html.android .row-actions .btn:not([data-act="more"]) { display: none; }
+html.android .row-actions .btn[data-act="more"] { display: inline-flex; }
+html.android .row.open .row-actions {
+  order: 3;
+  width: 100%;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding-top: 4px;
+}
+html.android .row.open .row-actions .btn { display: inline-flex; }
+
+html.android dialog {
+  margin: auto auto 0;
+  width: 100%;
+  max-width: none;
+  border-radius: 16px 16px 0 0;
+  max-height: 88vh;
+}
+html.android dialog form { padding-bottom: calc(var(--inset-bottom, 0px) + 14px); }
+
+html.android .row-actions { display: flex; }
+html.android .row-actions .btn[data-act="more"] { min-width: 38px; }

@@ -170,3 +170,60 @@ func TestBalanceEndToEnd(t *testing.T) {
 	}
 	t.Logf("ok, up=%d down=%d", up, down)
 }
+
+// TestBalanceLeastPingLive starts a real Xray with the leastping strategy and
+// its burst observatory: the strategy requires that feature, and without the
+// fallback outbound the first connections would fail before the first probe
+// completes.
+func TestBalanceLeastPingLive(t *testing.T) {
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, "ok")
+	}))
+	defer target.Close()
+	_, port, err := net.SplitHostPort(target.Listener.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	local, err := socks.Listen(plainNet{}, t.Logf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer local.Close()
+
+	link := fmt.Sprintf("socks://127.0.0.1:%d#local", local.Port())
+	first, err := profile.ParseLink(link)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := profile.ParseLink(link)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first.ID, second.ID = "first", "second"
+
+	cfg, err := BuildConfig(first, Options{
+		SocksPort: 21392, HTTPPort: 21393,
+		Balance: []*profile.Server{first, second}, BalanceStrategy: "leastping",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	client, err := Start(cfg)
+	if err != nil {
+		t.Fatalf("xray rejected the leastping config: %v\n%s", err, cfg)
+	}
+	defer client.Close()
+
+	proxy, _ := url.Parse("http://127.0.0.1:21393")
+	hc := &http.Client{Transport: &http.Transport{Proxy: http.ProxyURL(proxy)}, Timeout: 10 * time.Second}
+	for i := 0; i < 3; i++ {
+		resp, err := hc.Get("http://localhost:" + port + "/")
+		if err != nil {
+			t.Fatalf("request %d with leastping: %v", i, err)
+		}
+		resp.Body.Close()
+	}
+	if up, down := client.Traffic(); up == 0 || down == 0 {
+		t.Fatalf("traffic counters not updated: up=%d down=%d", up, down)
+	}
+}

@@ -82,9 +82,28 @@ type Settings struct {
 	KillSwitch bool `json:"killSwitch"`
 
 	// Balance spreads the new connections across all the servers of the
-	// selected server's subscription (Xray balancing, round-robin) instead
-	// of using a single one. Full-tunnel protocols cannot be balanced.
+	// selected server's subscription instead of using a single one.
+	// Full-tunnel protocols cannot be balanced.
 	Balance bool `json:"balance"`
+	// BalanceStrategy is "roundrobin" ("" means the same: spread evenly) or
+	// "leastping": always the healthy member with the lowest delay.
+	// Dead members are dropped before connecting in both cases.
+	BalanceStrategy string `json:"balanceStrategy"`
+
+	// ProxyApps and DirectApps route whole applications through the VPN or
+	// around it, by process name ("chrome.exe"), absolute path or folder
+	// ("C:/Games/"). Xray resolves the owner of a connection through the
+	// system's TCP table: it works on Windows, Linux, macOS and Android.
+	// ProxyApps win over DirectApps and over the site rules.
+	ProxyApps  []string `json:"proxyApps"`
+	DirectApps []string `json:"directApps"`
+
+	// AndroidApps and AndroidAppsMode split the tunnel per application on
+	// Android: mode "allow" sends only AndroidApps through the VPN, "block"
+	// sends everything except them, "" (or "off") sends everything. The
+	// client itself is always kept out of the tunnel.
+	AndroidApps     []string `json:"androidApps"`
+	AndroidAppsMode string   `json:"androidAppsMode"`
 }
 
 // Traffic counts the bytes passed through the VPN on one day.

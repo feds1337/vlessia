@@ -40,8 +40,11 @@ type Host interface {
 	Emit(name, payload string)
 	// OpenTun starts the VPN service, establishes the VPN interface with
 	// dns as its DNS server and returns the interface's file descriptor,
-	// which then belongs to Go.
-	OpenTun(dns string) (int32, error)
+	// which then belongs to Go. config is a JSON object
+	// {"mode":"allow"|"block","apps":["pkg", …]}: "allow" keeps the VPN to
+	// the listed apps, "block" keeps them out of it, anything else sends
+	// every app through the VPN.
+	OpenTun(dns, config string) (int32, error)
 	// TunClosed tells the VPN service that the interface is gone.
 	TunClosed()
 	OpenURL(url string)
@@ -54,6 +57,9 @@ type Host interface {
 	OpenVpnSettings()
 	// Notify shows a system notification (traffic, subscription expiry).
 	Notify(title, text string)
+	// InstalledApps lists the apps that can be put in or out of the VPN, as
+	// a JSON array of {"package": …, "label": …}.
+	InstalledApps() (string, error)
 }
 
 var (
@@ -458,6 +464,11 @@ func (a *client) SaveSettings(s store.Settings) error {
 	}
 	s.DNS = dns
 	s.DirectRules, s.ProxyRules = cleanRules(s.DirectRules), cleanRules(s.ProxyRules)
+	s.DirectApps, s.ProxyApps = cleanRules(s.DirectApps), cleanRules(s.ProxyApps)
+	s.AndroidApps = cleanRules(s.AndroidApps)
+	if s.AndroidAppsMode != "allow" && s.AndroidAppsMode != "block" {
+		s.AndroidAppsMode = ""
+	}
 	for _, rules := range [][]string{s.DirectRules, s.ProxyRules} {
 		if _, _, err := xray.ParseRules(rules); err != nil {
 			return err
@@ -479,10 +490,14 @@ func (a *client) SaveSettings(s store.Settings) error {
 		}
 	}
 	if old.SocksPort == s.SocksPort && old.HTTPPort == s.HTTPPort && old.BypassRU == s.BypassRU &&
-		old.LogLevel == s.LogLevel && old.Balance == s.Balance &&
+		old.LogLevel == s.LogLevel && old.Balance == s.Balance && old.BalanceStrategy == s.BalanceStrategy &&
+		old.AndroidAppsMode == s.AndroidAppsMode &&
 		strings.Join(old.DNS, ",") == strings.Join(s.DNS, ",") &&
 		strings.Join(old.DirectRules, "|") == strings.Join(s.DirectRules, "|") &&
-		strings.Join(old.ProxyRules, "|") == strings.Join(s.ProxyRules, "|") {
+		strings.Join(old.ProxyRules, "|") == strings.Join(s.ProxyRules, "|") &&
+		strings.Join(old.DirectApps, "|") == strings.Join(s.DirectApps, "|") &&
+		strings.Join(old.ProxyApps, "|") == strings.Join(s.ProxyApps, "|") &&
+		strings.Join(old.AndroidApps, "|") == strings.Join(s.AndroidApps, "|") {
 		return nil
 	}
 	return a.reconnectIfActive()
@@ -626,7 +641,7 @@ func (a *client) openTun(dnsServers []string) (func(), error) {
 			}
 		}
 		var err error
-		fd, err = a.host.OpenTun(dns)
+		fd, err = a.host.OpenTun(dns, a.tunConfig())
 		if err != nil {
 			a.host.TunClosed()
 			return nil, err
@@ -642,6 +657,34 @@ func (a *client) openTun(dnsServers []string) (func(), error) {
 		}
 		a.endTun(fd)
 	}, nil
+}
+
+// tunConfig builds the per-application split of the tunnel for the VPN
+// service: which apps go through the VPN and which stay out of it.
+func (a *client) tunConfig() string {
+	var s store.Settings
+	a.store.Read(func(d *store.Data) { s = d.Settings })
+	mode := s.AndroidAppsMode
+	if mode != "allow" && mode != "block" || len(s.AndroidApps) == 0 {
+		mode = ""
+	}
+	var apps []string
+	for _, p := range s.AndroidApps {
+		if p = strings.TrimSpace(p); p != "" {
+			apps = append(apps, p)
+		}
+	}
+	b, err := json.Marshal(map[string]any{"mode": mode, "apps": apps})
+	if err != nil {
+		return `{"mode":"","apps":[]}`
+	}
+	return string(b)
+}
+
+// GetInstalledApps returns the apps that can be put in or out of the VPN, as
+// a JSON array of {"package": …, "label": …}.
+func (a *client) GetInstalledApps() (string, error) {
+	return a.host.InstalledApps()
 }
 
 // killSwitchOn reports whether the kill switch is enabled in the settings.

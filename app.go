@@ -150,6 +150,7 @@ func (a *App) startup(ctx context.Context) {
 	a.tray = StartTray(a)
 	go a.lib.AutoUpdateLoop()
 	go a.updateLoop()
+	go a.netWatch()
 	a.refreshAutostart()
 	var autoConnect, kill, tunMode bool
 	a.store.Read(func(d *store.Data) {
@@ -535,9 +536,12 @@ func (a *App) applyWindowTheme(theme string) {
 func affectsConnection(a, b store.Settings) bool {
 	return a.Mode != b.Mode || a.SocksPort != b.SocksPort || a.HTTPPort != b.HTTPPort ||
 		a.BypassRU != b.BypassRU || a.LogLevel != b.LogLevel || a.Balance != b.Balance ||
+		a.BalanceStrategy != b.BalanceStrategy ||
 		strings.Join(a.DNS, ",") != strings.Join(b.DNS, ",") ||
 		strings.Join(a.DirectRules, "|") != strings.Join(b.DirectRules, "|") ||
-		strings.Join(a.ProxyRules, "|") != strings.Join(b.ProxyRules, "|")
+		strings.Join(a.ProxyRules, "|") != strings.Join(b.ProxyRules, "|") ||
+		strings.Join(a.DirectApps, "|") != strings.Join(b.DirectApps, "|") ||
+		strings.Join(a.ProxyApps, "|") != strings.Join(b.ProxyApps, "|")
 }
 
 // SetMode switches between system proxy and TUN.

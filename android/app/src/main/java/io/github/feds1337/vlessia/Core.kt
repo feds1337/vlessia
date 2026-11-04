@@ -25,6 +25,7 @@ import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import io.github.feds1337.vlessia.mobile.Host
 import io.github.feds1337.vlessia.mobile.Mobile
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.util.concurrent.ExecutorService
@@ -116,9 +117,30 @@ object Core : Host {
         TileService.requestListeningState(context, ComponentName(context, VlessiaTile::class.java))
     }
 
-    override fun openTun(dns: String): Int = VlessiaVpnService.establish(context, dns)
+    override fun openTun(dns: String, config: String): Int = VlessiaVpnService.establish(context, dns, config)
 
     override fun tunClosed() = VlessiaVpnService.stop()
+
+    /**
+     * The apps a user can put in or out of the VPN: the launcher apps, as a
+     * JSON array of {"package": …, "label": …}.
+     */
+    override fun installedApps(): String {
+        val pm = context.packageManager
+        val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+        val apps = runCatching { pm.queryIntentActivities(intent, 0) }.getOrElse { emptyList() }
+            .map { it.activityInfo.applicationInfo }
+            .distinctBy { it.packageName }
+            .map { info ->
+                JSONObject()
+                    .put("package", info.packageName)
+                    .put("label", runCatching { pm.getApplicationLabel(info).toString() }.getOrDefault(info.packageName))
+            }
+            .sortedBy { it.optString("label").lowercase() }
+        val arr = JSONArray()
+        apps.forEach { arr.put(it) }
+        return arr.toString()
+    }
 
     /** A reminder from the core: traffic left, subscription expiry. */
     override fun notify(title: String, text: String) {

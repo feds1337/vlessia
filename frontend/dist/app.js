@@ -10,6 +10,10 @@ let platform = "windows"; // "windows" | "darwin" | "linux" | "android"
 const pings = {};
 let logsTimer = null;
 let logsBusy = false;
+// Android: the apps picked for the tunnel, and the list of installed ones
+// (fetched from the native side on first use).
+let androidApps = [];
+let installedApps = null;
 // Selects that were turned into animated dropdowns (they re-sync on a
 // language switch).
 const enhancedSelects = [];
@@ -145,6 +149,7 @@ function renderServers() {
           <button class="btn ghost small" data-act="via" title="${relay ? esc(t("servers.via_set", relay.name)) : esc(t("d.via_title"))}">${esc(t("servers.via"))}</button>
           <button class="btn ghost small" data-act="copy">${esc(t("servers.copy"))}</button>
           <button class="btn ghost small" data-act="del">${esc(t("servers.del"))}</button>
+          <button class="btn ghost small row-more" data-act="more" aria-label="…" title="…">⋯</button>
         </div>
         ${pingCell(s.id)}
       </div>`;
@@ -480,8 +485,17 @@ function fillSettings() {
   f.autoReconnect.checked = !s.noAutoReconnect;
   f.killSwitch.checked = s.killSwitch;
   f.balance.checked = s.balance;
+  f.balanceStrategy.value = s.balanceStrategy || "";
+  $("#balance-strategy").hidden = !s.balance;
   f.proxyRules.value = (s.proxyRules || []).join("\n");
   f.directRules.value = (s.directRules || []).join("\n");
+  f.proxyApps.value = (s.proxyApps || []).join("\n");
+  f.directApps.value = (s.directApps || []).join("\n");
+  if (platform === "android") {
+    f.androidAppsMode.value = s.androidAppsMode || "";
+    androidApps = (s.androidApps || []).slice();
+    renderAppsCount();
+  }
   f.animations.checked = !s.noAnimations;
   f.theme.value = s.theme || "";
   f.accent.value = s.accent || "";
@@ -496,6 +510,7 @@ function fillSettings() {
 
 function readSettings() {
   const f = $("#settings-form");
+  const android = platform === "android";
   return {
     mode: f.mode.value,
     socksPort: Number(f.socksPort.value),
@@ -507,9 +522,14 @@ function readSettings() {
     noAutoReconnect: !f.autoReconnect.checked,
     killSwitch: f.killSwitch.checked,
     balance: f.balance.checked,
+    balanceStrategy: f.balanceStrategy.value,
     autoBest: state.settings.autoBest, // set from the server list
     proxyRules: f.proxyRules.value.split("\n"),
     directRules: f.directRules.value.split("\n"),
+    proxyApps: android ? state.settings.proxyApps || [] : f.proxyApps.value.split("\n"),
+    directApps: android ? state.settings.directApps || [] : f.directApps.value.split("\n"),
+    androidApps: android ? androidApps : state.settings.androidApps || [],
+    androidAppsMode: android ? f.androidAppsMode.value : state.settings.androidAppsMode || "",
     noAnimations: !f.animations.checked,
     theme: f.theme.value,
     accent: f.accent.value,
@@ -685,6 +705,50 @@ function openViaDialog(id) {
   d.showModal();
 }
 
+// ---------- android: apps in or out of the tunnel ----------
+
+let appsSelection = new Set();
+
+function renderAppsCount() {
+  const el = $("#apps-count");
+  if (!el) return;
+  el.textContent = androidApps.length ? t("apps.selected", androidApps.length) : t("apps.none");
+}
+
+function renderAppsList() {
+  const list = $("#apps-list");
+  const q = $("#apps-search").value.trim().toLowerCase();
+  if (!installedApps || !installedApps.length) {
+    list.innerHTML = `<div class="empty">${esc(t("apps.empty"))}</div>`;
+    return;
+  }
+  const items = installedApps.filter((a) =>
+    !q || (a.label || "").toLowerCase().includes(q) || (a.package || "").toLowerCase().includes(q));
+  if (!items.length) {
+    list.innerHTML = `<div class="empty">${esc(t("servers.not_found"))}</div>`;
+    return;
+  }
+  list.innerHTML = items.map((a) => `
+    <label><input type="checkbox" value="${esc(a.package)}"${appsSelection.has(a.package) ? " checked" : ""}>
+      <span class="app-name">${esc(a.label || a.package)}</span><span class="app-pkg">${esc(a.package)}</span></label>`).join("");
+}
+
+async function openAppsDialog() {
+  appsSelection = new Set(androidApps);
+  $("#apps-search").value = "";
+  if (!installedApps) {
+    try {
+      const raw = await api().GetInstalledApps();
+      installedApps = JSON.parse(raw || "[]");
+    } catch {
+      installedApps = [];
+      toast(t("apps.failed"), true);
+    }
+  }
+  renderAppsList();
+  $("#apps-dialog").showModal();
+}
+
 const added = (n) => toast(t("toast.added", n, unitPlural("unit.server_added", n)));
 
 function render() {
@@ -719,6 +783,8 @@ function enhanceSelect(sel) {
   if (lab) {
     const div = document.createElement("div");
     div.className = lab.className;
+    // Keep the id: the code hides and shows some rows by it.
+    if (lab.id) div.id = lab.id;
     div.append(...lab.childNodes);
     lab.replaceWith(div);
   }
@@ -869,6 +935,10 @@ function bind() {
     if (row.dataset.auto) return toggleAuto();
     const id = row.dataset.id;
     const act = e.target.closest("[data-act]")?.dataset.act;
+    if (act === "more") {
+      row.classList.toggle("open");
+      return;
+    }
     if (act === "copy") {
       const isConf = !state.servers.find((x) => x.id === id)?.link.includes("://");
       return call("CopyLink", id).then(() => toast(isConf ? t("toast.copied_conf") : t("toast.copied_link"))).catch(() => {});
@@ -954,12 +1024,33 @@ function bind() {
       .catch(() => {});
   });
 
+  // Android: the app list for the split tunnel.
+  $("#pick-apps").addEventListener("click", () => openAppsDialog().catch(() => {}));
+  $("#apps-search").addEventListener("input", renderAppsList);
+  $("#apps-list").addEventListener("change", (e) => {
+    const cb = e.target;
+    if (cb.type !== "checkbox") return;
+    if (cb.checked) appsSelection.add(cb.value);
+    else appsSelection.delete(cb.value);
+  });
+  $("#apps-reset").addEventListener("click", () => {
+    appsSelection.clear();
+    renderAppsList();
+  });
+  $("#apps-dialog").addEventListener("close", () => {
+    if ($("#apps-dialog").returnValue !== "ok") return;
+    androidApps = [...appsSelection];
+    renderAppsCount();
+    call("SaveSettings", readSettings()).then(() => toast(t("toast.saved"))).catch(() => {});
+  });
+
   // Settings save as soon as a field changes.
   $("#settings-form").addEventListener("submit", (e) => e.preventDefault());
   $("#settings-form").addEventListener("change", (e) => {
     if (e.target.id === "autostart" || e.target.id === "lang-select") return;
     if (e.target.name === "animations") applyMotion(!e.target.checked);
     if (e.target.name === "theme" || e.target.name === "accent") applyLook(e.target.form.theme.value, e.target.form.accent.value);
+    if (e.target.name === "balance") $("#balance-strategy").hidden = !e.target.checked;
     // A bad rule keeps the text so it can be corrected.
     const keep = e.target.tagName === "TEXTAREA";
     call("SaveSettings", readSettings()).then(() => toast(t("toast.saved"))).catch(() => keep || fillSettings());
@@ -1045,6 +1136,10 @@ function applyAndroid() {
   $('#settings-form input[name="autoConnect"]').parentElement.querySelector("span").textContent = t("s.auto_connect_android");
   $("#open-dir").closest(".inline").hidden = true;
   $("#dns-hint").textContent = t("s.dns_hint_android");
+  // The per-app split of the tunnel replaces the process rules on Android.
+  $("#android-apps").hidden = false;
+  $("#apps-section").hidden = true;
+  renderAppsCount();
 }
 
 async function init() {

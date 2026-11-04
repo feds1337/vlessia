@@ -116,6 +116,13 @@
           <p class="hint" id="kill-hint"></p>
           <label class="check"><input type="checkbox" name="balance"> <span data-i18n="s.balance">Балансировка между серверами подписки</span></label>
           <p class="hint" data-i18n="s.balance_hint">Новые соединения распределяются между серверами одной подписки (round-robin). Не работает для WireGuard, AmneziaWG и OpenVPN.</p>
+          <label class="row-field" id="balance-strategy" hidden>
+            <span data-i18n="s.balance_strategy">Стратегия балансировки</span>
+            <select name="balanceStrategy">
+              <option value="" data-i18n="s.strategy_roundrobin">Поровну — каждое новое соединение на следующий сервер</option>
+              <option value="leastping" data-i18n="s.strategy_leastping">Самый быстрый — по задержке, с проверкой живости</option>
+            </select>
+          </label>
           <details class="more">
             <summary data-i18n="s.more">Дополнительно</summary>
             <div class="more-body">
@@ -144,6 +151,32 @@
             <label class="row-field"><span data-i18n="s.rules_direct">Всегда напрямую</span><textarea name="directRules" rows="4" spellcheck="false" placeholder="gosuslugi.ru&#10;95.163.0.0/16"></textarea></label>
           </div>
           <p class="hint" data-i18n="s.rules_hint">По одному на строку: домен (вместе с поддоменами), IP-адрес или подсеть. «Через VPN» важнее «Напрямую» и галочки про российские сайты.</p>
+        </section>
+
+        <section id="apps-section">
+          <h3 data-i18n="s.apps">Правила для приложений</h3>
+          <div class="pair">
+            <label class="row-field"><span data-i18n="s.apps_vpn">Всегда через VPN</span><textarea name="proxyApps" rows="4" spellcheck="false" placeholder="chrome.exe&#10;Telegram.exe"></textarea></label>
+            <label class="row-field"><span data-i18n="s.apps_direct">Всегда напрямую</span><textarea name="directApps" rows="4" spellcheck="false" placeholder="steam.exe&#10;C:/Games/"></textarea></label>
+          </div>
+          <p class="hint" data-i18n="s.apps_hint">По одному на строку: имя процесса (chrome.exe), полный путь или папка с «/» на конце. Приложения важнее правил для сайтов. Работает на Windows, Linux и macOS.</p>
+        </section>
+
+        <section id="android-apps" hidden>
+          <h3 data-i18n="s.apps_android">Приложения через VPN</h3>
+          <label class="row-field">
+            <span data-i18n="s.apps_mode">Какие приложения отправлять через VPN</span>
+            <select name="androidAppsMode">
+              <option value="" data-i18n="s.apps_mode_all">Все приложения</option>
+              <option value="allow" data-i18n="s.apps_mode_allow">Только выбранные</option>
+              <option value="block" data-i18n="s.apps_mode_block">Все, кроме выбранных</option>
+            </select>
+          </label>
+          <div class="inline">
+            <button class="btn ghost" type="button" id="pick-apps" data-i18n="s.apps_pick">Выбрать приложения…</button>
+            <span class="muted" id="apps-count"></span>
+          </div>
+          <p class="hint" data-i18n="s.apps_android_hint">Само приложение Vlessia в туннель не попадает: ему нужен интернет для подписок и обновлений.</p>
         </section>
 
         <section>
@@ -271,6 +304,20 @@
         <select id="via-select"></select>
       </label>
       <div class="dialog-actions">
+        <button class="btn ghost" value="cancel" data-i18n="d.cancel">Отмена</button>
+        <button class="btn primary" value="ok" data-i18n="d.save">Сохранить</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="apps-dialog">
+    <form method="dialog">
+      <h2 data-i18n="d.apps_title">Приложения</h2>
+      <p class="muted" data-i18n="d.apps_sub">Отметьте приложения: они пойдут через VPN или останутся вне его — в зависимости от режима.</p>
+      <input class="field-input" id="apps-search" data-i18n-ph="d.apps_search" data-i18n-aria="d.apps_search" placeholder="Найти приложение">
+      <div class="apps-list" id="apps-list"></div>
+      <div class="dialog-actions">
+        <button class="btn ghost" type="button" id="apps-reset" data-i18n="d.apps_reset">Снять все</button>
         <button class="btn ghost" value="cancel" data-i18n="d.cancel">Отмена</button>
         <button class="btn primary" value="ok" data-i18n="d.save">Сохранить</button>
       </div>

@@ -22,13 +22,14 @@ func (h *fakeHost) Emit(name, payload string) {
 	defer h.mu.Unlock()
 	h.events = append(h.events, name)
 }
-func (h *fakeHost) OpenTun(string) (int32, error) { return 0, errors.New("нет VPN") }
-func (h *fakeHost) TunClosed()                    {}
-func (h *fakeHost) OpenURL(string)                {}
-func (h *fakeHost) SetClipboard(text string)      { h.clip = text }
-func (h *fakeHost) PlaySound(string)              {}
-func (h *fakeHost) InstallPackage(string)         {}
-func (h *fakeHost) OpenVpnSettings()              {}
+func (h *fakeHost) OpenTun(string, string) (int32, error) { return 0, errors.New("нет VPN") }
+func (h *fakeHost) TunClosed()                            {}
+func (h *fakeHost) InstalledApps() (string, error)        { return "[]", nil }
+func (h *fakeHost) OpenURL(string)                        {}
+func (h *fakeHost) SetClipboard(text string)              { h.clip = text }
+func (h *fakeHost) PlaySound(string)                      {}
+func (h *fakeHost) InstallPackage(string)                 {}
+func (h *fakeHost) OpenVpnSettings()                      {}
 func (h *fakeHost) Notify(title, text string) {
 	h.mu.Lock()
 	defer h.mu.Unlock()

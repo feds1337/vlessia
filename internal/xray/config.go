@@ -39,9 +39,16 @@ type Options struct {
 	// ProxyRules win.
 	DirectRules []string
 	ProxyRules  []string
-	DNS         []string
-	LogFile     string
-	LogLevel    string
+	// DirectApps and ProxyApps route whole applications: process names
+	// ("chrome.exe", matched without the .exe), absolute paths or folders
+	// ("C:/Games/"). Xray finds the owner of a connection through the
+	// system's TCP table, which works on Windows, Linux, macOS and
+	// Android. ProxyApps win over DirectApps and over the site rules.
+	DirectApps []string
+	ProxyApps  []string
+	DNS        []string
+	LogFile    string
+	LogLevel   string
 
 	// Via is a second server the connection goes through (multi-tunnel):
 	// the main outbound's outboundTag points at it.
@@ -50,11 +57,14 @@ type Options struct {
 	ViaBridgePort int    // local bridge of Via, when it is a full-tunnel protocol
 
 	// Balance replaces the single proxy outbound with an Xray balancing
-	// tag that spreads new connections across the listed servers
-	// (round-robin). They must not be full-tunnel; BalanceAddrs holds
-	// their pre-resolved IPs in TUN mode, same order.
-	Balance      []*profile.Server
-	BalanceAddrs []string
+	// tag that spreads new connections across the listed servers. They
+	// must not be full-tunnel; BalanceAddrs holds their pre-resolved IPs
+	// in TUN mode, same order. BalanceStrategy is "roundrobin" (default:
+	// spread evenly) or "leastping" (always the fastest healthy member,
+	// which needs a burst observatory below).
+	Balance         []*profile.Server
+	BalanceAddrs    []string
+	BalanceStrategy string
 
 	// Block builds a config that drops every connection into a black hole
 	// (the kill switch); only the inbounds and, in TUN mode, the adapter
@@ -154,7 +164,6 @@ func BuildConfig(s *profile.Server, o Options) ([]byte, error) {
 		// with Xray's DNS, whose queries go out through the proxy.
 		rules = append(rules, obj{"type": "field", "inboundTag": []string{TagTun}, "port": "53", "outboundTag": TagDNS})
 	}
-	rules = append(rules, obj{"type": "field", "ip": privateCIDRs, "outboundTag": TagDirect})
 	// In balance mode the rules point at the balancer with balancerTag:
 	// Xray does not accept a balancing tag in outboundTag.
 	route := func(r obj, tag string) obj {
@@ -165,6 +174,15 @@ func BuildConfig(s *profile.Server, o Options) ([]byte, error) {
 		}
 		return r
 	}
+	// Applications come first: they are the most explicit choice of the
+	// user, so they win over the site rules and the .ru bypass.
+	if apps := cleanApps(o.ProxyApps); len(apps) > 0 {
+		rules = append(rules, route(obj{"type": "field", "process": apps}, TagProxy))
+	}
+	if apps := cleanApps(o.DirectApps); len(apps) > 0 {
+		rules = append(rules, obj{"type": "field", "process": apps, "outboundTag": TagDirect})
+	}
+	rules = append(rules, obj{"type": "field", "ip": privateCIDRs, "outboundTag": TagDirect})
 	// The user's rules come before the .ru bypass: "through VPN" wins over
 	// "direct", and both over the bypass.
 	hasIPRules := false
@@ -211,14 +229,19 @@ func BuildConfig(s *profile.Server, o Options) ([]byte, error) {
 
 	routing := obj{"domainStrategy": domainStrategy, "rules": rules}
 	if balancing != nil {
+		strategy := nonEmpty(o.BalanceStrategy, "roundrobin")
+		balancer := obj{"tag": TagProxy, "selector": balancing, "strategy": obj{"type": strategy}}
+		if strategy == "leastping" {
+			// leastping picks the member with the lowest delay from the
+			// observatory; until the first probe finishes it returns no
+			// tag at all, and every connection would fail — the fallback
+			// keeps them going to the first member.
+			balancer["fallbackTag"] = TagBalance + "-1"
+		}
 		// Balancers live inside routing, and the rules reach them by
 		// balancerTag. The selector matches outbound tags by prefix, so
 		// the exact bal-N tags work as well.
-		routing["balancers"] = []obj{{
-			"tag":      TagProxy,
-			"selector": balancing,
-			"strategy": obj{"type": "roundrobin"},
-		}}
+		routing["balancers"] = []obj{balancer}
 	}
 	cfg := obj{
 		"log":       obj{"loglevel": nonEmpty(o.LogLevel, "warning"), "access": "none", "error": o.LogFile},
@@ -231,6 +254,19 @@ func BuildConfig(s *profile.Server, o Options) ([]byte, error) {
 			"statsOutboundUplink":   true,
 			"statsOutboundDownlink": true,
 		}},
+	}
+	if balancing != nil && nonEmpty(o.BalanceStrategy, "roundrobin") == "leastping" {
+		// The leastping strategy reads the health of the group from the
+		// observatory: a dead member simply stops being chosen.
+		cfg["burstObservatory"] = obj{
+			"subjectSelector": []string{TagBalance},
+			"pingConfig": obj{
+				"destination": "https://www.gstatic.com/generate_204",
+				"interval":    "1m",
+				"timeout":     "5s",
+				"sampling":    3,
+			},
+		}
 	}
 	return json.MarshalIndent(cfg, "", "  ")
 }
@@ -440,4 +476,19 @@ func nonEmpty(v, def string) string {
 		return v
 	}
 	return def
+}
+
+// cleanApps normalises the application list: one entry per line or comma,
+// trimmed, empty entries dropped. Xray accepts a process name ("chrome.exe"
+// or "chrome"), an absolute path or a folder ending with a slash.
+func cleanApps(lines []string) []string {
+	var out []string
+	for _, line := range lines {
+		for _, part := range strings.Split(line, ",") {
+			if part = strings.TrimSpace(part); part != "" {
+				out = append(out, part)
+			}
+		}
+	}
+	return out
 }

@@ -141,8 +141,8 @@ function renderServers() {
     html += `
       <div class="row ${s.id === state.selected ? (state.settings.autoBest ? "picked" : "selected") : ""}" data-id="${s.id}" tabindex="0">
         <div class="row-main">
-          <div class="row-name" title="${esc(s.name)}">${esc(s.name)}</div>
-          <div class="row-meta"><span class="proto">${esc(protoLine(s))}</span>${esc(s.address)}:${s.port}${relay ? ` <span class="via-mini">· ${esc(t("servers.via_set", relay.name))}</span>` : ""}</div>
+          <div class="row-name" title="${esc(s.name + " — " + s.address + ":" + s.port)}">${esc(s.name)}</div>
+          <div class="row-meta"><span class="proto">${esc(protoLine(s))}</span>${relay ? `<span class="via-mini">· ${esc(t("servers.via_set", relay.name))}</span>` : ""}</div>
         </div>
         <div class="row-actions">
           ${s.ovpn?.needAuth ? `<button class="btn ghost small" data-act="login">${esc(t("servers.login"))}</button>` : ""}
@@ -182,7 +182,11 @@ function autoRow() {
 
 function selectedServer() {
   const st = state.status;
-  return state.servers.find((s) => s.id === (st.state === "disconnected" ? state.selected : st.serverId));
+  const id = st.state === "disconnected" ? state.selected : st.serverId;
+  // The status keeps the id of the connection; after a subscription refresh
+  // the servers get new ids, so fall back to the current selection instead
+  // of showing "no server" while connected.
+  return state.servers.find((s) => s.id === id) || state.servers.find((s) => s.id === state.selected) || null;
 }
 
 let lastDockState = null;
@@ -208,13 +212,17 @@ function renderDock() {
 
   let detail = "";
   if (st.state === "connected") {
-    detail = st.mode === "tun" ? t("dock.detail_tun") : t("dock.detail_proxy", state.settings.httpPort);
+    // No "Proxy 127.0.0.1:10809" line: the mode is already in the segment
+    // above, and the port only clutters the dock.
+    const parts = [];
+    if (st.mode === "tun") parts.push(t("dock.detail_tun"));
     const relay = srv?.via ? state.servers.find((x) => x.id === srv.via) : null;
-    if (relay) detail += " · " + t("dock.detail_via", relay.name);
+    if (relay) parts.push(t("dock.detail_via", relay.name));
     if (state.settings.balance && srv && !isFullTunnel(srv)) {
       const n = state.servers.filter((s) => s.subId === srv.subId && !isFullTunnel(s)).length;
-      if (n >= 2) detail += " · " + t("dock.detail_balance", n, unitPlural("unit.server", n));
+      if (n >= 2) parts.push(t("dock.detail_balance", n, unitPlural("unit.server", n)));
     }
+    detail = parts.join(" · ");
   } else if (srv?.subId) {
     detail = subSummary(state.subscriptions.find((x) => x.id === srv.subId));
     if (detail) detail = t("dock.detail_sub", detail);

@@ -206,6 +206,16 @@ func Disconnect() {
 	}
 }
 
+// Revoke closes the interface even when the kill switch is enabled. Android
+// has revoked permission, so keeping its descriptor cannot block traffic.
+func Revoke() {
+	if a, err := get(); err == nil {
+		a.opMu.Lock()
+		defer a.opMu.Unlock()
+		_ = a.disconnect(false)
+	}
+}
+
 // State returns "disconnected", "connecting", "connected" or
 // "disconnecting".
 func State() string {
@@ -761,6 +771,10 @@ func (a *client) endTun(fd int32) {
 func (a *client) Disconnect() error {
 	a.opMu.Lock()
 	defer a.opMu.Unlock()
+	return a.disconnect(true)
+}
+
+func (a *client) disconnect(keepBlock bool) error {
 	a.mu.Lock()
 	eng, stop, fd := a.eng, a.stopStats, a.tunFd
 	a.eng = nil
@@ -778,6 +792,9 @@ func (a *client) Disconnect() error {
 	started := time.Now()
 	close(stop)
 	err := eng.Close()
+	if !keepBlock && fd != 0 {
+		a.endTun(fd)
+	}
 	a.log.Printf("отключено за %v", time.Since(started).Round(time.Millisecond))
 	a.mu.Lock()
 	kept := a.tunFd != 0

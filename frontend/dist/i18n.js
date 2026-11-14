@@ -562,6 +562,7 @@ const GO_EXACT = {
     "неподдерживаемый формат резервной копии": "Unsupported backup format",
     "отключите VPN перед восстановлением": "Disconnect the VPN before restoring a backup",
     "Окно выбора файла уже открыто": "The file picker is already open",
+    "В списке VPN нет установленных приложений": "The VPN allowlist contains no installed apps",
     "OpenVPN: недопустимое имя директивы": "OpenVPN: invalid directive name",
     "OpenVPN: сертификаты и ключи должны быть внутри профиля": "OpenVPN: embed certificates and keys in the profile",
     "OpenVPN: введите логин и пароль в приложении": "OpenVPN: enter the username and password in the app",

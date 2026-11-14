@@ -935,6 +935,10 @@ func (a *App) Diagnose() []core.DiagnosticStep {
 	a.mu.Unlock()
 	proxy := a.localProxyURL()
 	ready := session != nil
+	if proxy != nil && status.Mode == "tun" && ready {
+		iface, err := net.InterfaceByName(tun.AdapterName)
+		ready = err == nil && iface.Flags&net.FlagUp != 0
+	}
 	if proxy != nil && status.Mode == "proxy" {
 		ready = sysproxy.Active(proxy.Host)
 	}

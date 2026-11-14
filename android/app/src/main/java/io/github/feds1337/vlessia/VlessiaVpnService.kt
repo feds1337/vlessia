@@ -136,8 +136,11 @@ class VlessiaVpnService : VpnService() {
         }.getOrDefault(emptyList())
         val others = apps.filter { it != packageName }
         when {
-            mode == "allow" && others.isNotEmpty() -> others.forEach {
-                runCatching { builder.addAllowedApplication(it) }
+            mode == "allow" && others.isNotEmpty() -> {
+                // With no valid packages Android would silently tunnel all
+                // apps, including Vlessia's own sockets.
+                val allowed = others.count { runCatching { builder.addAllowedApplication(it) }.isSuccess }
+                if (allowed == 0) throw IOException("В списке VPN нет установленных приложений")
             }
             mode == "block" -> {
                 others.forEach { runCatching { builder.addDisallowedApplication(it) } }
@@ -158,7 +161,7 @@ class VlessiaVpnService : VpnService() {
 
     override fun onRevoke() {
         // Another VPN took over, or the user turned ours off in the settings.
-        Core.executor.execute { Mobile.disconnect() }
+        Core.executor.execute { Mobile.revoke() }
         finish()
     }
 

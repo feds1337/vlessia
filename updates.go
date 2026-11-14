@@ -20,7 +20,7 @@ type UpdateInfo struct {
 	State     string  `json:"state"`
 	Current   string  `json:"current"`
 	Latest    string  `json:"latest"`
-	Notes     string  `json:"notes"`
+	NotesHTML string  `json:"notesHtml"`
 	PageURL   string  `json:"pageUrl"`
 	Installed bool    `json:"installed"` // false for the portable build: no in-place update
 	Progress  float64 `json:"progress"`  // 0..1 while downloading
@@ -80,7 +80,7 @@ func (a *App) CheckUpdate() (UpdateInfo, error) {
 	a.upd.release = rel
 	a.upd.mu.Unlock()
 	return a.setUpdate(func(u *UpdateInfo) {
-		u.Latest, u.Notes, u.PageURL, u.Error = rel.Version, rel.Notes, rel.PageURL, ""
+		u.Latest, u.NotesHTML, u.PageURL, u.Error = rel.Version, rel.NotesHTML, rel.PageURL, ""
 		if update.Newer(version, rel.Version) {
 			u.State = "available"
 		} else {

@@ -244,6 +244,7 @@
           <div class="inline">
             <span class="muted" id="version-line"></span>
             <button class="btn ghost" type="button" id="check-update" data-i18n="s.check_now">Проверить сейчас</button>
+            <button class="btn ghost" type="button" id="settings-notes" data-i18n="dock.whats_new" hidden>Что нового</button>
           </div>
         </section>
 
@@ -374,13 +375,13 @@
     </form>
   </dialog>
 
-  <dialog id="notes-dialog">
+  <dialog id="notes-dialog" aria-labelledby="notes-title">
     <form method="dialog">
       <h2 id="notes-title" data-i18n="d.notes_title">Что нового</h2>
-      <div class="notes" id="notes-body"></div>
+      <div class="notes" id="notes-body" tabindex="0" role="region" aria-labelledby="notes-title"></div>
       <div class="dialog-actions">
         <button class="btn ghost" value="cancel" data-i18n="d.close">Закрыть</button>
-        <button class="btn primary" value="update" data-i18n="dock.update">Обновить</button>
+        <button class="btn primary" id="notes-update" value="update" data-i18n="dock.update">Обновить</button>
       </div>
     </form>
   </dialog>

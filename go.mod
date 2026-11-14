@@ -15,6 +15,7 @@ require (
 	github.com/vishvananda/netlink v1.3.1
 	github.com/wailsapp/wails/v2 v2.16.0
 	github.com/xtls/xray-core v1.260327.1-0.20261021115930-1b1647cd9ddf
+	github.com/yuin/goldmark v1.8.7
 	golang.org/x/crypto v0.59.0
 	golang.org/x/mobile v0.0.0-20261011034528-197770444867
 	golang.org/x/net v0.62.0

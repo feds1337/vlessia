@@ -27,9 +27,9 @@ var releaseTag = regexp.MustCompile("^v[0-9]+[.][0-9]+[.][0-9]+$")
 
 // Release describes the latest published version.
 type Release struct {
-	Version string `json:"version"` // tag, e.g. "v0.2.0"
-	Notes   string `json:"notes"`   // release description (markdown)
-	PageURL string `json:"pageUrl"`
+	Version   string `json:"version"`   // tag, e.g. "v0.2.0"
+	NotesHTML string `json:"notesHtml"` // release description rendered from Markdown
+	PageURL   string `json:"pageUrl"`
 
 	setupURL  string
 	setupName string
@@ -76,7 +76,7 @@ func Latest(ctx context.Context, client *http.Client) (*Release, error) {
 		return nil, errors.New("неверная версия релиза")
 	}
 	base := "https://github.com/" + Repo
-	rel := &Release{Version: r.TagName, Notes: r.Body, PageURL: base + "/releases/tag/" + r.TagName}
+	rel := &Release{Version: r.TagName, NotesHTML: renderNotes(r.Body), PageURL: base + "/releases/tag/" + r.TagName}
 	prefix := "Vlessia-" + r.TagName
 	for _, a := range r.Assets {
 		if a.URL != base+"/releases/download/"+r.TagName+"/"+a.Name || a.Size <= 0 {

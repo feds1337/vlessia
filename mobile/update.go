@@ -19,7 +19,7 @@ type updateInfo struct {
 	State     string  `json:"state"`
 	Current   string  `json:"current"`
 	Latest    string  `json:"latest"`
-	Notes     string  `json:"notes"`
+	NotesHTML string  `json:"notesHtml"`
 	PageURL   string  `json:"pageUrl"`
 	Installed bool    `json:"installed"`
 	Progress  float64 `json:"progress"`
@@ -75,7 +75,7 @@ func (a *client) CheckUpdate() (updateInfo, error) {
 	a.upd.release = rel
 	a.upd.mu.Unlock()
 	return a.setUpdate(func(u *updateInfo) {
-		u.Latest, u.Notes, u.PageURL, u.Error = rel.Version, rel.Notes, rel.PageURL, ""
+		u.Latest, u.NotesHTML, u.PageURL, u.Error = rel.Version, rel.NotesHTML, rel.PageURL, ""
 		if update.Newer(a.version, rel.Version) {
 			u.State = "available"
 		} else {

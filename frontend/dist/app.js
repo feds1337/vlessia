@@ -6,6 +6,7 @@ const $$ = (sel) => document.querySelectorAll(sel);
 
 let state = null;
 let upd = null;
+let shownNotes = null;
 let platform = "windows"; // "windows" | "darwin" | "linux" | "android"
 const pings = Object.create(null);
 let logsTimer = null;
@@ -638,6 +639,49 @@ function renderAutostart(st) {
 
 // ---------- updates ----------
 
+function renderNotes() {
+  const content = $("#notes-body");
+  $("#notes-title").textContent = t("d.notes_version", bareVersion(upd.latest));
+  const update = $("#notes-update");
+  update.hidden = upd.state !== "available";
+  update.textContent = t(upd.installed ? "dock.update" : "dock.download");
+
+  const html = upd.notesHtml || "";
+  if (html === shownNotes && html) return;
+  shownNotes = html;
+  // Template content is inert. Keep images from making remote requests and
+  // handle web links through the native browser instead of the WebView.
+  const template = document.createElement("template");
+  template.innerHTML = html;
+  for (const img of template.content.querySelectorAll("img")) {
+    img.replaceWith(document.createTextNode(img.alt));
+  }
+  for (const link of template.content.querySelectorAll("a")) {
+    const href = link.getAttribute("href");
+    if (!href) continue;
+    try {
+      const url = new URL(href, upd.pageUrl);
+      if (url.protocol === "https:" || url.protocol === "http:") {
+        link.href = url.href;
+        continue;
+      }
+    } catch { /* malformed URL */ }
+    link.removeAttribute("href");
+  }
+  content.replaceChildren(template.content);
+  if (!content.textContent.trim()) content.textContent = t("d.notes_none");
+}
+
+function showNotes() {
+  if (!upd?.latest) return;
+  const dialog = $("#notes-dialog");
+  if (dialog.open) return;
+  renderNotes();
+  dialog.returnValue = "";
+  dialog.showModal();
+  $("#notes-body").scrollTop = 0;
+}
+
 function renderUpdate() {
   if (!upd) return;
   const banner = $("#update-banner");
@@ -666,6 +710,8 @@ function renderUpdate() {
   }[upd.state] || "";
   $("#version-line").textContent = line ? `${cur} ${line}` : cur;
   $("#check-update").disabled = upd.state === "checking" || busy;
+  $("#settings-notes").hidden = !upd.latest;
+  if ($("#notes-dialog").open) renderNotes();
 }
 
 async function applyUpdate() {
@@ -1173,13 +1219,17 @@ function bind() {
 
   $("#check-update").addEventListener("click", () => call("CheckUpdate").catch(() => {}));
   $("#update-go").addEventListener("click", applyUpdate);
-  $("#update-notes").addEventListener("click", () => {
-    $("#notes-title").textContent = t("d.notes_version", bareVersion(upd.latest));
-    $("#notes-body").textContent = upd.notes || t("d.notes_none");
-    $("#notes-dialog").showModal();
+  $("#update-notes").addEventListener("click", showNotes);
+  $("#settings-notes").addEventListener("click", showNotes);
+  $("#notes-body").addEventListener("click", (e) => {
+    const link = e.target.closest("a[href]");
+    if (link) {
+      e.preventDefault();
+      api().OpenURL(link.href);
+    }
   });
   $("#notes-dialog").addEventListener("close", () => {
-    if ($("#notes-dialog").returnValue === "update") applyUpdate();
+    if ($("#notes-dialog").returnValue === "update" && upd.state === "available") applyUpdate();
   });
 
   window.runtime.EventsOn("state", (s) => {

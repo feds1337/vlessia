@@ -175,8 +175,10 @@ object Core : Host {
     }
 
     override fun openURL(url: String) {
+        val uri = Uri.parse(url)
+        if (uri.scheme !in listOf("https", "http") || uri.host.isNullOrBlank()) return
         runCatching {
-            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            context.startActivity(Intent(Intent.ACTION_VIEW, uri).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         }
     }
 

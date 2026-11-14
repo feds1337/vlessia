@@ -27,6 +27,10 @@ func IsImage(data []byte) bool {
 
 // DecodeBytes reads a QR code from a PNG, JPEG or GIF file.
 func DecodeBytes(data []byte) (string, error) {
+	cfg, _, err := image.DecodeConfig(bytes.NewReader(data))
+	if err == nil && (cfg.Width <= 0 || cfg.Height <= 0 || cfg.Width > (16<<20)/cfg.Height) {
+		return "", errors.New("картинка слишком большая")
+	}
 	img, _, err := image.Decode(bytes.NewReader(data))
 	if err != nil {
 		return "", errors.New("не удалось открыть картинку: поддерживаются PNG, JPEG и GIF")

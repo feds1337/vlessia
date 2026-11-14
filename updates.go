@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"net/http"
-	"os"
 	"path/filepath"
 	"sync"
 	"time"
@@ -29,9 +28,10 @@ type UpdateInfo struct {
 }
 
 type updater struct {
-	mu      sync.Mutex
-	info    UpdateInfo
-	release *update.Release
+	mu       sync.Mutex
+	info     UpdateInfo
+	release  *update.Release
+	applying bool
 }
 
 func (a *App) updateState() UpdateInfo {
@@ -94,8 +94,18 @@ func (a *App) CheckUpdate() (UpdateInfo, error) {
 // copy cannot update itself; the release page is opened instead.
 func (a *App) ApplyUpdate() error {
 	a.upd.mu.Lock()
+	if a.upd.applying {
+		a.upd.mu.Unlock()
+		return nil
+	}
+	a.upd.applying = true
 	rel := a.upd.release
 	a.upd.mu.Unlock()
+	defer func() {
+		a.upd.mu.Lock()
+		a.upd.applying = false
+		a.upd.mu.Unlock()
+	}()
 	if rel == nil || !update.Newer(version, rel.Version) {
 		return errors.New("обновление не найдено")
 	}
@@ -108,7 +118,7 @@ func (a *App) ApplyUpdate() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
 	defer cancel()
 	var lastEmit time.Time
-	dir := filepath.Join(os.TempDir(), "Vlessia-update")
+	dir := filepath.Join(a.store.Dir(), "updates")
 	setup, err := update.Download(ctx, a.httpClient(0), rel, dir, func(done, total int64) {
 		if total <= 0 || time.Since(lastEmit) < 150*time.Millisecond {
 			return

@@ -64,6 +64,7 @@
     <nav class="tabs" aria-label="Разделы">
       <button class="tab active" data-view="servers" data-i18n="tab.servers">Серверы</button>
       <button class="tab" data-view="subs" data-i18n="tab.subs">Подписки</button>
+      <button class="tab" data-view="traffic" data-i18n="tab.traffic">Трафик</button>
       <button class="tab" data-view="settings" data-i18n="tab.settings">Настройки</button>
       <button class="tab" data-view="logs" data-i18n="tab.logs">Журнал</button>
     </nav>
@@ -95,11 +96,39 @@
         <input class="field-input" id="sub-name" data-i18n-ph="subs.name_ph" data-i18n-aria="subs.name_aria" placeholder="Название (необязательно)" aria-label="Название">
         <button class="btn primary" id="sub-add" type="submit" data-i18n="subs.add">Добавить подписку</button>
       </form>
+      <div class="bar">
+        <button class="btn" id="refresh-subs" type="button" data-i18n="subs.refresh_all">Обновить все</button>
+      </div>
       <div class="list" id="sub-list"></div>
+    </section>
+
+    <section class="view" id="view-traffic">
+      <div class="list">
+        <div class="bar">
+          <button class="btn" data-days="7" aria-pressed="false" data-i18n="traffic.week">7 дней</button>
+          <button class="btn primary" data-days="30" aria-pressed="true" data-i18n="traffic.month">30 дней</button>
+        </div>
+        <p id="traffic-summary"></p>
+        <div class="traffic-chart" id="traffic-chart" aria-hidden="true"></div>
+        <details>
+          <summary data-i18n="traffic.daily">Трафик по дням</summary>
+          <ul id="traffic-days" class="history-list"></ul>
+        </details>
+        <h3 data-i18n="traffic.connections">Последние подключения</h3>
+        <ul class="history-list" id="traffic-connections"></ul>
+      </div>
     </section>
 
     <section class="view" id="view-settings">
       <form class="settings" id="settings-form">
+        <section>
+          <h3 data-i18n="backup.title">Резервные копии</h3>
+          <p class="muted" data-i18n="backup.warning">Файл содержит ключи, пароли и ссылки на подписки в открытом виде.</p>
+          <div class="bar">
+            <button class="btn" type="button" id="backup-export" data-i18n="backup.export">Сохранить копию</button>
+            <button class="btn" type="button" id="backup-restore" data-i18n="backup.restore">Восстановить</button>
+          </div>
+        </section>
         <section>
           <h3 data-i18n="s.connection">Подключение</h3>
           <label class="row-field">
@@ -245,6 +274,27 @@
       <pre class="logs" id="logs"></pre>
     </section>
   </main>
+
+  <dialog id="backup-confirm">
+    <form method="dialog">
+      <h2 data-i18n="backup.restore">Восстановить</h2>
+      <p data-i18n="backup.confirm">Копия заменит текущие серверы, подписки и настройки.</p>
+      <div class="dialog-actions">
+        <button class="btn ghost" value="cancel" autofocus data-i18n="d.cancel">Отмена</button>
+        <button class="btn primary" value="restore" data-i18n="backup.restore">Восстановить</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="diagnostic-dialog">
+    <form method="dialog">
+      <h2 data-i18n="dock.test">Проверить соединение</h2>
+      <ul class="history-list" id="diagnostic-results" aria-live="polite"></ul>
+      <div class="dialog-actions">
+        <button class="btn" data-i18n="d.close">Закрыть</button>
+      </div>
+    </form>
+  </dialog>
 
   <dialog id="add-dialog">
     <form method="dialog">

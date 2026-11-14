@@ -27,7 +27,9 @@ import android.util.Base64
 import com.google.zxing.integration.android.IntentIntegrator
 import org.json.JSONArray
 import org.json.JSONObject
+import org.json.JSONTokener
 import java.io.ByteArrayInputStream
+import java.io.ByteArrayOutputStream
 
 /**
  * The main screen: the desktop client's web UI in a WebView. Its calls to
@@ -41,6 +43,7 @@ class MainActivity : Activity() {
         const val EXTRA_CONNECT = "connect"
         private const val REQ_VPN = 1
         private const val REQ_FILE = 2
+        private const val BACKUP_LIMIT = 32 * 1024 * 1024
         private const val ORIGIN = "https://appassets.androidplatform.net"
     }
 
@@ -51,7 +54,7 @@ class MainActivity : Activity() {
 
     private var onVpnGranted: (() -> Unit)? = null
     private var onVpnDenied: (() -> Unit)? = null
-    private var pickCallback: Int? = null
+    private var pickCallback: Pair<Int, String>? = null
     private var scanCallback: Int? = null
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -104,7 +107,7 @@ class MainActivity : Activity() {
     private fun handleIntent(intent: Intent?, firstStart: Boolean) {
         if (intent?.action == Intent.ACTION_SEND) {
             intent.getStringExtra(Intent.EXTRA_TEXT)?.let { text ->
-                runInPage("call('ImportText', ${JSONObject.quote(text)}).then(added).catch(()=>{})")
+                runInPage("showImportDialog(${JSONObject.quote(text)})")
             }
             return
         }
@@ -191,6 +194,7 @@ class MainActivity : Activity() {
                 exec(id, "ImportText", JSONArray().put(text).toString())
             }
             "ImportFile" -> pickFile(id)
+            "ExportBackup", "RestoreBackup" -> pickFile(id, method)
             "ScanQR" -> scanQR(id)
             else -> exec(id, method, args)
         }
@@ -241,16 +245,53 @@ class MainActivity : Activity() {
 
     // ---------- files ----------
 
-    private fun pickFile(id: Int) {
-        pickCallback = id
-        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT)
+    private fun pickFile(id: Int, method: String = "ImportFile") {
+        if (pickCallback != null) {
+            reject(id, "Окно выбора файла уже открыто")
+            return
+        }
+        pickCallback = id to method
+        val intent = Intent(if (method == "ExportBackup") Intent.ACTION_CREATE_DOCUMENT else Intent.ACTION_OPEN_DOCUMENT)
             .addCategory(Intent.CATEGORY_OPENABLE)
-            .setType("*/*")
+            .setType(if (method == "ExportBackup") "application/json" else "*/*")
+        if (method == "ExportBackup") intent.putExtra(Intent.EXTRA_TITLE, "vlessia-backup.json")
         try {
             startActivityForResult(intent, REQ_FILE)
         } catch (e: Exception) {
             pickCallback = null
             reject(id, "Не удалось открыть выбор файла")
+        }
+    }
+
+    private fun readFile(uri: Uri, limit: Int): ByteArray =
+        contentResolver.openInputStream(uri)?.use { input ->
+            val output = ByteArrayOutputStream()
+            val buffer = ByteArray(8192)
+            while (true) {
+                val count = input.read(buffer)
+                if (count == -1) break
+                if (count > limit - output.size()) throw Exception("файл слишком большой")
+                output.write(buffer, 0, count)
+            }
+            output.toByteArray()
+        } ?: throw Exception("не удалось прочитать файл")
+
+    private fun backupFile(id: Int, method: String, uri: Uri) {
+        Core.executor.execute {
+            try {
+                val result = if (method == "ExportBackup") {
+                    val data = JSONTokener(Mobile.call("ExportBackupData", "[]")).nextValue() as String
+                    contentResolver.openOutputStream(uri, "wt")?.use { it.write(data.toByteArray(Charsets.UTF_8)) }
+                        ?: throw Exception("не удалось записать файл")
+                    "true"
+                } else {
+                    val data = readFile(uri, BACKUP_LIMIT).toString(Charsets.UTF_8)
+                    Mobile.call("RestoreBackupData", JSONArray().put(data).toString())
+                }
+                runOnUiThread { resolve(id, result) }
+            } catch (e: Exception) {
+                runOnUiThread { reject(id, e.message ?: e.toString()) }
+            }
         }
     }
 
@@ -261,9 +302,7 @@ class MainActivity : Activity() {
                 contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
                     if (c.moveToFirst()) name = c.getString(0)?.substringBeforeLast('.') ?: name
                 }
-                val bytes = contentResolver.openInputStream(uri)?.use { it.readBytes() }
-                    ?: throw Exception("не удалось прочитать файл")
-                if (bytes.size > 4 shl 20) throw Exception("файл слишком большой")
+                val bytes = readFile(uri, 4 shl 20)
                 val data = Base64.encodeToString(bytes, Base64.NO_WRAP)
                 val result = Mobile.call("ImportFileData", JSONArray().put(data).put(name).toString())
                 runOnUiThread { resolve(id, result) }
@@ -304,10 +343,16 @@ class MainActivity : Activity() {
                 if (resultCode == RESULT_OK) granted?.invoke() else denied?.invoke()
             }
             REQ_FILE -> {
-                val id = pickCallback ?: return
+                val (id, method) = pickCallback ?: return
                 pickCallback = null
                 val uri = data?.data
-                if (resultCode != RESULT_OK || uri == null) resolve(id, "0") else importFile(id, uri)
+                if (resultCode != RESULT_OK || uri == null) {
+                    resolve(id, if (method == "ImportFile") "0" else "false")
+                } else if (method == "ImportFile") {
+                    importFile(id, uri)
+                } else {
+                    backupFile(id, method, uri)
+                }
             }
         }
     }
@@ -321,18 +366,26 @@ class MainActivity : Activity() {
 
         override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? {
             val url = request.url
+            if (url.scheme != "https" || url.host != "appassets.androidplatform.net" || url.port != -1 ||
+                url.path?.startsWith("/assets/web/") != true
+            ) {
+                return WebResourceResponse("text/plain", "utf-8", 403, "Forbidden", emptyMap(), ByteArrayInputStream(byteArrayOf()))
+            }
             if (url.path == "/assets/web/index.html") {
                 // The desktop page plus the Android bridge, loaded before app.js.
                 val html = assets.open("web/index.html").bufferedReader().use { it.readText() }
                     .replace("<script src=\"app.js\"></script>", "<script src=\"android.js\"></script><script src=\"app.js\"></script>")
-                return WebResourceResponse("text/html", "utf-8", ByteArrayInputStream(html.toByteArray()))
+                return WebResourceResponse("text/html", "utf-8", ByteArrayInputStream(html.toByteArray())).apply {
+                    responseHeaders = mapOf(
+                        "Content-Security-Policy" to "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; frame-src 'none'; object-src 'none'; base-uri 'none'"
+                    )
+                }
             }
             return loader.shouldInterceptRequest(url)
         }
 
         override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
-            // Links never navigate the app's page; they open in the browser.
-            Core.openURL(request.url.toString())
+            if (request.isForMainFrame && request.hasGesture()) Core.openURL(request.url.toString())
             return true
         }
 

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"sync"
 
 	"github.com/feds1337/vlessia/internal/profile"
@@ -14,10 +15,11 @@ import (
 )
 
 type Subscription struct {
-	ID      string `json:"id"`
-	Name    string `json:"name"` // set by the user; overrides Title
-	URL     string `json:"url"`
-	Updated int64  `json:"updated"` // unix seconds, last successful update
+	ID          string `json:"id"`
+	Name        string `json:"name"` // set by the user; overrides Title
+	URL         string `json:"url"`
+	Updated     int64  `json:"updated"` // unix seconds, last successful update
+	LastAttempt int64  `json:"lastAttempt,omitempty"`
 
 	// Metadata reported by the subscription server.
 	Title          string `json:"title"`
@@ -124,7 +126,9 @@ type Data struct {
 	SavedProxy *sysproxy.State `json:"savedProxy,omitempty"`
 
 	// Today is the traffic of the current day.
-	Today Traffic `json:"today"`
+	Today        Traffic      `json:"today"`
+	DailyTraffic []Traffic    `json:"dailyTraffic,omitempty"`
+	Connections  []Connection `json:"connections,omitempty"`
 
 	// WelcomeSeen: the first-run offer (a free VPN from the Telegram bot)
 	// has been shown.
@@ -171,6 +175,8 @@ func Open() (*Store, error) {
 		if err := json.Unmarshal(b, &s.data); err != nil {
 			return nil, err
 		}
+		s.data.Servers = slices.DeleteFunc(s.data.Servers, func(p *profile.Server) bool { return p == nil })
+		s.data.Subscriptions = slices.DeleteFunc(s.data.Subscriptions, func(p *Subscription) bool { return p == nil })
 	}
 	d := DefaultSettings()
 	st := &s.data.Settings
@@ -204,18 +210,65 @@ func (s *Store) Read(fn func(d *Data)) {
 
 // Update calls fn with the data under lock and saves it to disk.
 func (s *Store) Update(fn func(d *Data)) error {
+	return s.Edit(func(d *Data) error { fn(d); return nil })
+}
+
+// Edit commits a change in memory only after it was saved successfully.
+func (s *Store) Edit(fn func(d *Data) error) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	fn(&s.data)
-	b, err := json.MarshalIndent(&s.data, "", "  ")
+	next := s.data.clone()
+	if err := fn(&next); err != nil {
+		return err
+	}
+	b, err := json.MarshalIndent(&next, "", "  ")
 	if err != nil {
 		return err
 	}
-	tmp := s.file() + ".tmp"
-	if err := os.WriteFile(tmp, b, 0o600); err != nil {
+	f, err := os.CreateTemp(s.dir, "config-*.tmp")
+	if err != nil {
 		return err
 	}
-	return os.Rename(tmp, s.file())
+	defer os.Remove(f.Name())
+	_, err = f.Write(b)
+	if closeErr := f.Close(); err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		return err
+	}
+	if err := os.Rename(f.Name(), s.file()); err != nil {
+		return err
+	}
+	s.data = next
+	return nil
+}
+
+func (d Data) clone() Data {
+	d.Servers = slices.Clone(d.Servers)
+	for i, s := range d.Servers {
+		d.Servers[i] = s.Clone()
+	}
+	d.Subscriptions = slices.Clone(d.Subscriptions)
+	for i, sub := range d.Subscriptions {
+		c := *sub
+		d.Subscriptions[i] = &c
+	}
+	d.Settings.DNS = slices.Clone(d.Settings.DNS)
+	d.Settings.ProxyRules = slices.Clone(d.Settings.ProxyRules)
+	d.Settings.DirectRules = slices.Clone(d.Settings.DirectRules)
+	d.Settings.ProxyApps = slices.Clone(d.Settings.ProxyApps)
+	d.Settings.DirectApps = slices.Clone(d.Settings.DirectApps)
+	d.Settings.AndroidApps = slices.Clone(d.Settings.AndroidApps)
+	d.DailyTraffic = slices.Clone(d.DailyTraffic)
+	d.Connections = slices.Clone(d.Connections)
+	return d
+}
+
+type Connection struct {
+	Started int64  `json:"started"`
+	Server  string `json:"server"`
+	Mode    string `json:"mode"`
 }
 
 // Server returns a copy of the server with the given id.
@@ -224,8 +277,7 @@ func (s *Store) Server(id string) *profile.Server {
 	s.Read(func(d *Data) {
 		for _, srv := range d.Servers {
 			if srv.ID == id {
-				c := *srv
-				out = &c
+				out = srv.Clone()
 			}
 		}
 	})

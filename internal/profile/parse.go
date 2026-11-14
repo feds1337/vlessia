@@ -55,6 +55,10 @@ func ParseLink(link string) (*Server, error) {
 		return nil, fmt.Errorf("протокол %q не поддерживается", scheme)
 	}
 	if err != nil {
+		var uerr *url.Error
+		if errors.As(err, &uerr) {
+			return nil, errors.New("неверная ссылка на сервер")
+		}
 		return nil, err
 	}
 	return finalize(s, link)
@@ -355,6 +359,7 @@ func Reparse(s *Server) (*Server, error) {
 	}
 	fresh := servers[0]
 	fresh.ID, fresh.Name, fresh.SubID, fresh.Link = s.ID, s.Name, s.SubID, s.Link
+	fresh.Via = s.Via
 	return fresh, nil
 }
 

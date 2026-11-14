@@ -323,6 +323,19 @@ main {
 .view { display: none; flex: 1; min-height: 0; flex-direction: column; padding-top: 16px; }
 .view.active { display: flex; }
 
+.traffic-chart {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: 4px;
+  align-items: end;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--line);
+  margin: 16px 0;
+}
+.traffic-chart meter { width: 100%; height: 88px; writing-mode: vertical-lr; direction: rtl; accent-color: var(--lagoon); }
+.history-list { display: grid; gap: 5px; margin: 10px 0; padding-left: 22px; overflow-wrap: anywhere; }
+
 .bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 10px; }
 
 .btn {

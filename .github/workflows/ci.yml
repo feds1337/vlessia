@@ -6,6 +6,9 @@ on:
   pull_request:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   build:
     strategy:
@@ -38,9 +41,19 @@ jobs:
       - name: Vet
         run: go vet -tags "${{ matrix.tags }}" ./...
 
+      - name: Go vulnerability scan
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 -tags "${{ matrix.tags }}" ./...
+
+      - name: JavaScript syntax
+        if: runner.os == 'Linux'
+        run: |
+          for file in frontend/dist/*.js android/app/src/main/assets/web/android.js; do
+            node --check "$file" || exit 1
+          done
+
       - name: Test
         shell: bash
-        run: E2E=1 go test -tags "${{ matrix.tags }}" ./internal/...
+        run: E2E=1 go test -tags "${{ matrix.tags }}" ./...
 
       - name: Build
         shell: bash

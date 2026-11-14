@@ -2,6 +2,8 @@
 // (vless://, vmess://, trojan://, ss://) and subscription payloads into it.
 package profile
 
+import "slices"
+
 // Server is one outbound endpoint imported from a share link.
 type Server struct {
 	ID       string `json:"id"`
@@ -100,6 +102,23 @@ type OpenVPN struct {
 type Param struct {
 	Key   string `json:"key"`
 	Value string `json:"value"`
+}
+
+func (s *Server) Clone() *Server {
+	c := *s
+	if s.WG != nil {
+		wg := *s.WG
+		wg.Addresses = slices.Clone(wg.Addresses)
+		wg.DNS = slices.Clone(wg.DNS)
+		wg.AllowedIPs = slices.Clone(wg.AllowedIPs)
+		wg.AWG = slices.Clone(wg.AWG)
+		c.WG = &wg
+	}
+	if s.OVPN != nil {
+		ovpn := *s.OVPN
+		c.OVPN = &ovpn
+	}
+	return &c
 }
 
 // IsUDPOnly reports whether the server cannot be checked with a TCP ping.

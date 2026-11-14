@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/url"
@@ -29,6 +30,9 @@ func Resolve(host string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	if len(ips) == 0 {
+		return "", errors.New("DNS не вернул адресов")
+	}
 	for _, ip := range ips {
 		if ip.To4() != nil {
 			return ip.String(), nil
@@ -40,17 +44,19 @@ func Resolve(host string) (string, error) {
 // PingAll measures every server with up to 16 probes in parallel and
 // reports each result as it arrives.
 func PingAll(servers []*profile.Server, dialer *net.Dialer, report func(id string, ms int64)) {
-	sem := make(chan struct{}, 16)
+	jobs := make(chan *profile.Server)
 	var wg sync.WaitGroup
-	for _, s := range servers {
-		wg.Add(1)
-		go func(s *profile.Server) {
-			defer wg.Done()
-			sem <- struct{}{}
-			defer func() { <-sem }()
-			report(s.ID, PingServer(s, dialer))
-		}(s)
+	for range min(16, len(servers)) {
+		wg.Go(func() {
+			for s := range jobs {
+				report(s.ID, PingServer(s, dialer))
+			}
+		})
 	}
+	for _, s := range servers {
+		jobs <- s
+	}
+	close(jobs)
 	wg.Wait()
 }
 
@@ -127,7 +133,16 @@ func Logs(dir string) string {
 }
 
 func tail(path string, n int) string {
-	b, err := os.ReadFile(path)
+	f, err := os.Open(path)
+	if err != nil {
+		return "(пусто)\n"
+	}
+	defer f.Close()
+	const limit = 256 << 10
+	if info, err := f.Stat(); err == nil && info.Size() > limit {
+		_, _ = f.Seek(-limit, io.SeekEnd)
+	}
+	b, err := io.ReadAll(io.LimitReader(f, limit))
 	if err != nil {
 		return "(пусто)\n"
 	}

@@ -9,6 +9,7 @@
 package mobile
 
 import (
+	"bytes"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -289,11 +290,12 @@ type connStatus struct {
 }
 
 type appState struct {
-	Servers       []*profile.Server     `json:"servers"`
-	Subscriptions []*store.Subscription `json:"subscriptions"`
-	Selected      string                `json:"selected"`
-	Settings      store.Settings        `json:"settings"`
-	Status        connStatus            `json:"status"`
+	Servers                 []*profile.Server     `json:"servers"`
+	Subscriptions           []*store.Subscription `json:"subscriptions"`
+	Selected                string                `json:"selected"`
+	Settings                store.Settings        `json:"settings"`
+	Status                  connStatus            `json:"status"`
+	RefreshingSubscriptions []string              `json:"refreshingSubscriptions"`
 }
 
 // client holds the client state; its exported methods are called from the UI.
@@ -351,12 +353,44 @@ func (a *client) GetState() appState {
 	a.mu.Lock()
 	s.Status = a.status
 	a.mu.Unlock()
+	s.RefreshingSubscriptions = a.lib.RefreshingSubscriptions()
 	return s
 }
 
-func (a *client) GetVersion() string           { return a.version }
-func (a *client) GetPlatform() string          { return "android" }
-func (a *client) GetTraffic() core.TrafficInfo { return a.meter.Info() }
+func (a *client) GetVersion() string                     { return a.version }
+func (a *client) GetPlatform() string                    { return "android" }
+func (a *client) GetTraffic() core.TrafficInfo           { return a.meter.Info() }
+func (a *client) GetTrafficHistory() core.TrafficHistory { return a.meter.History() }
+
+func (a *client) ExportBackupData() (string, error) {
+	var b bytes.Buffer
+	if err := a.lib.WriteBackup(&b); err != nil {
+		return "", err
+	}
+	return b.String(), nil
+}
+
+func (a *client) RestoreBackupData(data string) (bool, error) {
+	a.opMu.Lock()
+	defer a.opMu.Unlock()
+	if a.engine() != nil {
+		return false, errors.New("отключите VPN перед восстановлением")
+	}
+	if err := a.lib.RestoreBackup(strings.NewReader(data), true); err != nil {
+		return false, err
+	}
+	state := a.GetState()
+	a.mu.Lock()
+	fd := a.tunFd
+	a.mu.Unlock()
+	if fd != 0 && !state.Settings.KillSwitch {
+		a.endTun(fd)
+		a.setStatus(func(s *connStatus) { *s = connStatus{State: "disconnected"} })
+	} else {
+		a.emitState()
+	}
+	return true, nil
+}
 
 // ---------- servers & subscriptions ----------
 
@@ -437,7 +471,20 @@ func (a *client) SetServerVia(id, via string) error {
 	return nil
 }
 
-func (a *client) OpenURL(u string)                           { a.host.OpenURL(u) }
+func (a *client) OpenURL(u string) {
+	if core.IsWebURL(u) {
+		a.host.OpenURL(u)
+	}
+}
+
+func (a *client) Diagnose() []core.DiagnosticStep {
+	a.opMu.Lock()
+	defer a.opMu.Unlock()
+	a.mu.Lock()
+	status, fd := a.status, a.tunFd
+	a.mu.Unlock()
+	return core.Diagnose(a.lib.Selected(), a.localProxyURL(), "tun", status.Kill, fd != 0)
+}
 func (a *client) OpenVpnSettings()                           { a.host.OpenVpnSettings() }
 func (a *client) GetLogs() string                            { return core.Logs(a.store.Dir()) }
 func (a *client) OpenDataDir()                               {}
@@ -612,6 +659,9 @@ func (a *client) Connect() error {
 	a.stopStats = stop
 	a.mu.Unlock()
 	a.meter.StartSession()
+	if err := a.meter.RecordConnection(srv.Name, "tun"); err != nil {
+		a.log.Printf("история подключений: %v", err)
+	}
 	go a.statsLoop(eng.Inst, stop)
 	if !settings.NoAutoReconnect {
 		go a.watch(eng, stop)
@@ -765,12 +815,11 @@ func (a *client) statsLoop(inst *xray.Instance, stop chan struct{}) {
 }
 
 func (a *client) localProxyURL() *url.URL {
-	if a.engine() == nil {
+	eng := a.engine()
+	if eng == nil {
 		return nil
 	}
-	var port int
-	a.store.Read(func(d *store.Data) { port = d.Settings.HTTPPort })
-	return core.LocalProxy(port)
+	return core.LocalProxy(eng.HTTPPort)
 }
 
 func (a *client) playSound() {

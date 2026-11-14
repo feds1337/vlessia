@@ -56,6 +56,14 @@ APK по архитектурам и универсальный — в `android/
 
 Релиз собирается GitHub Actions (`.github/workflows/release.yml`) при публикации тега: тесты, сборка установщика, portable-версии, пакетов macOS и Linux и APK для Android, публикация на странице Releases. Тег с дефисом (`v0.2.0-beta`) публикуется как пре-релиз.
 
+GitHub Actions публикует контрольные суммы и аттестации происхождения релизных файлов. Для проверки загруженного файла:
+
+```bash
+gh attestation verify ./Vlessia-v0.7.0-setup.exe --repo feds1337/vlessia
+```
+
+Для подписи Windows задайте секреты `WINDOWS_SIGNING_PFX_BASE64` и `WINDOWS_SIGNING_PFX_PASSWORD` с сертификатом Authenticode, доступным SignTool на runner. Для macOS нужны секреты `MACOS_SIGNING_P12_BASE64`, `MACOS_SIGNING_P12_PASSWORD`, `MACOS_NOTARY_APPLE_ID`, `MACOS_NOTARY_TEAM_ID` и `MACOS_NOTARY_APP_PASSWORD`. Укажите имя сертификата Developer ID Application в переменной `MACOS_SIGNING_IDENTITY`. При отсутствии сертификатов workflow собирает Windows без подписи издателя и macOS с локальной подписью.
+
 ```bash
 git tag v0.2.0
 ```
@@ -100,7 +108,7 @@ go test ./internal/...
 3. Через `netsh` адаптеру назначаются адрес, DNS и маршруты `0.0.0.0/1` + `128.0.0.0/1` (и IPv6 `::/1` + `8000::/1`). Все изменения временные и исчезают вместе с адаптером.
 4. DNS-запросы, пришедшие в TUN, перехватываются и разрешаются DNS-модулем Xray через прокси.
 
-Данные хранятся в `%APPDATA%\Vlessia` (путь можно переопределить переменной окружения `VLESSIA_DATA`). Там же лежат `app.log`, `xray.log` и последний сгенерированный `xray-config.json` — для отладки.
+Данные хранятся в `%APPDATA%\Vlessia` (путь можно переопределить переменной окружения `VLESSIA_DATA`). Там же лежат `app.log` и `xray.log`.
 
 ### Как работает AmneziaWG
 
@@ -178,7 +186,7 @@ Xray не умеет AmneziaWG, поэтому туннель поднимает
 
 ### Обновления (OTA)
 
-`internal/update` запрашивает `https://api.github.com/repos/feds1337/vlessia/releases/latest` и сравнивает тег с версией сборки (`-X main.version=…`; сборка `dev` не обновляется). Установщик релиза скачивается во временную папку и проверяется по размеру и по `SHA256SUMS.txt`, который публикует workflow релиза. Затем клиент отключает VPN (иначе системный прокси остался бы указывать на закрытый порт) и запускает установщик через `ShellExecute` (ему нужны права администратора):
+`internal/update` запрашивает `https://api.github.com/repos/feds1337/vlessia/releases/latest` и сравнивает тег с версией сборки (`-X main.version=…`; сборка `dev` не обновляется). Установщик скачивается в каталог `updates` в папке данных клиента. Установщик должен совпасть с размером из GitHub и контрольной суммой из `SHA256SUMS.txt`. Затем клиент отключает VPN и запускает установщик через `ShellExecute` с запросом прав администратора:
 
 ```
 Vlessia-vX.Y.Z-setup.exe /S --relaunch [--connect] /D=<папка установки>

@@ -82,12 +82,20 @@ func TestSubscriptionUpdateKeepsSelection(t *testing.T) {
 	if err := l.Select(b); err != nil {
 		t.Fatal(err)
 	}
+	if err := l.Store.Update(func(d *store.Data) {
+		d.Servers[0].Via = b
+	}); err != nil {
+		t.Fatal(err)
+	}
 	links = []string{"vless://11111111-1111-1111-1111-111111111111@9.9.9.9:443#c", links[1], links[0]}
 	if n, err := l.UpdateSubscription(subID); err != nil || n != 3 {
 		t.Fatalf("update = %d, %v", n, err)
 	}
-	if s := l.Selected(); s == nil || s.Name != "b" {
+	if s := l.Selected(); s == nil || s.Name != "b" || s.ID != b {
 		t.Fatalf("selection lost after update: %+v", s)
+	}
+	if s := l.AllServers()[2]; s.Via != b {
+		t.Fatalf("relay lost after update: %+v", s)
 	}
 }
 

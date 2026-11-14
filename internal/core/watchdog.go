@@ -85,9 +85,11 @@ func CheckThrough(proxy *url.URL) error {
 		return errors.New("не подключено")
 	}
 	var err error
+	client := HTTPClient(proxy, 10*time.Second)
+	defer client.CloseIdleConnections()
 	for _, u := range []string{"https://www.gstatic.com/generate_204", "https://cp.cloudflare.com/generate_204"} {
 		var resp *http.Response
-		resp, err = HTTPClient(proxy, 10*time.Second).Get(u)
+		resp, err = client.Get(u)
 		if err != nil {
 			continue
 		}

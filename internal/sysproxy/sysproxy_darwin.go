@@ -16,6 +16,21 @@ import (
 
 const networksetup = "/usr/sbin/networksetup"
 
+func Active(hostPort string) bool {
+	s, err := Get()
+	if err != nil || len(s.Services) == 0 {
+		return false
+	}
+	for _, svc := range s.Services {
+		for _, p := range []proxyEntry{svc.Web, svc.Secure} {
+			if !p.Enabled || net.JoinHostPort(p.Server, strconv.Itoa(p.Port)) != hostPort {
+				return false
+			}
+		}
+	}
+	return true
+}
+
 // bypassDomains lists addresses that must never go through the proxy.
 var bypassDomains = []string{"localhost", "127.0.0.1", "*.local", "169.254/16", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"}
 

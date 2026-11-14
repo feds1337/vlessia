@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"net/url"
@@ -73,11 +74,12 @@ type Status struct {
 }
 
 type AppState struct {
-	Servers       []*profile.Server     `json:"servers"`
-	Subscriptions []*store.Subscription `json:"subscriptions"`
-	Selected      string                `json:"selected"`
-	Settings      store.Settings        `json:"settings"`
-	Status        Status                `json:"status"`
+	Servers                 []*profile.Server     `json:"servers"`
+	Subscriptions           []*store.Subscription `json:"subscriptions"`
+	Selected                string                `json:"selected"`
+	Settings                store.Settings        `json:"settings"`
+	Status                  Status                `json:"status"`
+	RefreshingSubscriptions []string              `json:"refreshingSubscriptions"`
 }
 
 // App is bound to the frontend; its exported methods are callable from JS.
@@ -90,7 +92,7 @@ type App struct {
 
 	connectOnStart bool
 	autostarted    bool // launched by Windows logon
-	quitting       bool
+	quitting       atomic.Bool
 	// visible: the window is shown. Live traffic numbers are only sent to
 	// the UI then, so a VPN running all day in the tray costs no UI work.
 	visible atomic.Bool
@@ -241,7 +243,7 @@ func (a *App) refreshAutostart() {
 func (a *App) GetVersion() string { return version }
 
 func (a *App) beforeClose(ctx context.Context) bool {
-	if a.quitting {
+	if a.quitting.Load() {
 		return false
 	}
 	hideOnClose(ctx)
@@ -251,7 +253,7 @@ func (a *App) beforeClose(ctx context.Context) bool {
 
 func (a *App) shutdown(ctx context.Context) {
 	runtime.CleanupNotifications(ctx)
-	a.quitting = true
+	a.quitting.Store(true)
 	a.mu.Lock()
 	bs := a.blockSess
 	a.blockSess = nil
@@ -279,7 +281,7 @@ func (a *App) ShowWindow() {
 
 // Quit exits the application, disconnecting first.
 func (a *App) Quit() {
-	a.quitting = true
+	a.quitting.Store(true)
 	_ = a.Disconnect()
 	runtime.Quit(a.ctx)
 }
@@ -297,6 +299,7 @@ func (a *App) GetState() AppState {
 	a.mu.Lock()
 	s.Status = a.status
 	a.mu.Unlock()
+	s.RefreshingSubscriptions = a.lib.RefreshingSubscriptions()
 	return s
 }
 
@@ -338,14 +341,12 @@ func (a *App) ImportFile() (int, error) {
 	if err != nil || path == "" {
 		return 0, err
 	}
-	fi, err := os.Stat(path)
+	f, err := os.Open(path)
 	if err != nil {
 		return 0, err
 	}
-	if fi.Size() > 4<<20 {
-		return 0, errors.New("файл слишком большой")
-	}
-	b, err := os.ReadFile(path)
+	defer f.Close()
+	b, err := io.ReadAll(io.LimitReader(f, (4<<20)+1))
 	if err != nil {
 		return 0, err
 	}
@@ -428,7 +429,9 @@ func (a *App) RenameSubscription(id, name string) error { return a.lib.RenameSub
 
 // OpenURL opens a support / web page link in the default browser.
 func (a *App) OpenURL(u string) {
-	runtime.BrowserOpenURL(a.ctx, u)
+	if core.IsWebURL(u) {
+		runtime.BrowserOpenURL(a.ctx, u)
+	}
 }
 
 func (a *App) UpdateAllSubscriptions() error { return a.lib.UpdateAllSubscriptions() }
@@ -580,13 +583,17 @@ func (a *App) RestartAsAdmin() error {
 // block session up while the VPN is off in TUN mode, and tears it down
 // otherwise. It is called from the state changes, never from the UI
 // directly.
-func (a *App) syncKill() { a.syncKillFrom("") }
+func (a *App) syncKill() {
+	a.opMu.Lock()
+	defer a.opMu.Unlock()
+	a.syncKillFrom("")
+}
 
 // syncKillFrom is syncKill with the mode the last connection ran in:
 // full-tunnel servers use TUN even when the settings mode is proxy, and
 // the kill switch must cover their disconnect too.
 func (a *App) syncKillFrom(lastMode string) {
-	if a.quitting {
+	if a.quitting.Load() {
 		return
 	}
 	var want bool
@@ -615,9 +622,12 @@ func (a *App) syncKillFrom(lastMode string) {
 			return
 		}
 		a.mu.Lock()
-		if !a.quitting {
-			a.blockSess = bs
+		if a.quitting.Load() {
+			a.mu.Unlock()
+			bs.Close()
+			return
 		}
+		a.blockSess = bs
 		a.mu.Unlock()
 		a.log.Printf("kill switch: адаптер включён, интернет заблокирован")
 		a.setStatus(func(s *Status) { s.Kill = true })
@@ -647,7 +657,7 @@ func (a *App) watchBlock(bs blockSession) {
 	a.mu.Lock()
 	current := a.blockSess == bs
 	a.mu.Unlock()
-	if !current || a.quitting {
+	if !current || a.quitting.Load() {
 		return
 	}
 	a.log.Printf("kill switch: блокировка остановлена системой")
@@ -686,19 +696,17 @@ func (a *App) Connect() error {
 	if a.instance() != nil {
 		return nil
 	}
-	// The kill switch is off as soon as a real connection is starting.
-	a.mu.Lock()
-	bs := a.blockSess
-	a.mu.Unlock()
-	if bs != nil {
-		a.stopBlock(bs)
-	}
-
 	var settings store.Settings
 	a.store.Read(func(d *store.Data) { settings = d.Settings })
 	srv := a.lib.Selected()
 	if srv == nil {
 		return errors.New("выберите сервер")
+	}
+	a.mu.Lock()
+	bs := a.blockSess
+	a.mu.Unlock()
+	if bs != nil {
+		a.stopBlock(bs)
 	}
 	mode := settings.Mode
 	settings.Mode = core.EffectiveMode(srv, mode)
@@ -725,9 +733,7 @@ func (a *App) Connect() error {
 		})
 		// The attempt released the kill switch: put the block back, or the
 		// traffic would go out directly.
-		if bs != nil {
-			a.syncKillFrom(settings.Mode)
-		}
+		a.syncKillFrom(settings.Mode)
 		return err
 	}
 	stop := make(chan struct{})
@@ -740,6 +746,9 @@ func (a *App) Connect() error {
 		go a.watchTUN(sess)
 	}
 	a.meter.StartSession()
+	if err := a.meter.RecordConnection(srv.Name, settings.Mode); err != nil {
+		a.log.Printf("история подключений: %v", err)
+	}
 	go a.statsLoop(eng.Inst, stop)
 	if !settings.NoAutoReconnect {
 		go a.watch(eng, stop)
@@ -783,6 +792,7 @@ func (a *App) start(srv *profile.Server, settings store.Settings) (*core.Engine,
 		return eng, sess, nil
 	}
 	if err := a.enableSystemProxy(settings.HTTPPort); err != nil {
+		a.restoreSystemProxy()
 		_ = eng.Close()
 		return nil, nil, fmt.Errorf("не удалось включить системный прокси: %w", err)
 	}
@@ -851,7 +861,7 @@ func (a *App) restoreSystemProxy() {
 	var saved *sysproxy.State
 	a.store.Read(func(d *store.Data) { saved = d.SavedProxy })
 	if saved == nil {
-		saved = &sysproxy.State{}
+		return
 	}
 	if err := sysproxy.Set(*saved); err != nil {
 		a.log.Printf("не удалось вернуть настройки прокси: %v", err)
@@ -893,12 +903,12 @@ func (a *App) statsLoop(inst *xray.Instance, stop chan struct{}) {
 }
 
 func (a *App) localProxyURL() *url.URL {
-	if a.instance() == nil {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.eng == nil {
 		return nil
 	}
-	var port int
-	a.store.Read(func(d *store.Data) { port = d.Settings.HTTPPort })
-	return core.LocalProxy(port)
+	return core.LocalProxy(a.eng.HTTPPort)
 }
 
 // ---------- latency ----------
@@ -916,6 +926,22 @@ func (a *App) PingAll() {
 
 // TestConnection measures an HTTPS request through the active tunnel.
 func (a *App) TestConnection() (int64, error) { return core.TestConnection(a.localProxyURL()) }
+
+func (a *App) Diagnose() []core.DiagnosticStep {
+	a.opMu.Lock()
+	defer a.opMu.Unlock()
+	a.mu.Lock()
+	status, session := a.status, a.tunSess
+	a.mu.Unlock()
+	proxy := a.localProxyURL()
+	ready := session != nil
+	if proxy != nil && status.Mode == "proxy" {
+		ready = sysproxy.Active(proxy.Host)
+	}
+	return core.Diagnose(a.lib.Selected(), proxy, status.Mode, status.Kill, ready)
+}
+
+func (a *App) GetTrafficHistory() core.TrafficHistory { return a.meter.History() }
 
 // ---------- logs ----------
 

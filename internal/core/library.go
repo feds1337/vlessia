@@ -9,7 +9,9 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/feds1337/vlessia/internal/profile"
@@ -30,6 +32,9 @@ type Library struct {
 	// Remind delivers a user-visible reminder (traffic left, subscription
 	// expiry) as a system notification and a toast.
 	Remind func(text string)
+
+	refreshMu  sync.Mutex
+	refreshing map[string]bool
 }
 
 func (l *Library) changed() {
@@ -44,6 +49,9 @@ func (l *Library) ChangedNow() { l.changed() }
 // ImportText adds servers from share links, or a subscription if the text
 // is an http(s) URL. Returns how many servers were added.
 func (l *Library) ImportText(text string) (int, error) {
+	if len(text) > 8<<20 {
+		return 0, errors.New("файл слишком большой")
+	}
 	text = strings.TrimSpace(text)
 	if text == "" {
 		return 0, errors.New("пусто")
@@ -224,8 +232,18 @@ func (l *Library) DeleteServer(id string) error {
 
 // Select makes the server current.
 func (l *Library) Select(id string) error {
-	err := l.Store.Update(func(d *store.Data) { d.Selected = id })
-	l.changed()
+	err := l.Store.Edit(func(d *store.Data) error {
+		for _, s := range d.Servers {
+			if s.ID == id {
+				d.Selected = id
+				return nil
+			}
+		}
+		return errors.New("сервер не найден")
+	})
+	if err == nil {
+		l.changed()
+	}
 	return err
 }
 
@@ -242,8 +260,7 @@ func (l *Library) Selected() *profile.Server {
 	l.Store.Read(func(d *store.Data) {
 		for _, s := range d.Servers {
 			if s.ID == d.Selected {
-				c := *s
-				srv = &c
+				srv = s.Clone()
 			}
 		}
 	})
@@ -252,7 +269,7 @@ func (l *Library) Selected() *profile.Server {
 
 func (l *Library) AddSubscription(name, rawURL string) (int, error) {
 	u, err := url.Parse(strings.TrimSpace(rawURL))
-	if err != nil || (u.Scheme != "http" && u.Scheme != "https") {
+	if err != nil || !isWebURL(u) {
 		return 0, errors.New("неверный URL подписки")
 	}
 	sub := &store.Subscription{ID: profile.NewID(), Name: name, URL: u.String()}
@@ -288,6 +305,23 @@ func (l *Library) DeleteSubscription(id string) error {
 // UpdateSubscription downloads the subscription, refreshes its metadata and
 // replaces its servers.
 func (l *Library) UpdateSubscription(id string) (int, error) {
+	l.refreshMu.Lock()
+	if l.refreshing[id] {
+		l.refreshMu.Unlock()
+		return 0, errors.New("подписка уже обновляется")
+	}
+	if l.refreshing == nil {
+		l.refreshing = make(map[string]bool)
+	}
+	l.refreshing[id] = true
+	l.refreshMu.Unlock()
+	l.changed()
+	defer func() {
+		l.refreshMu.Lock()
+		delete(l.refreshing, id)
+		l.refreshMu.Unlock()
+		l.changed()
+	}()
 	var sub store.Subscription
 	l.Store.Read(func(d *store.Data) {
 		for _, s := range d.Subscriptions {
@@ -302,20 +336,30 @@ func (l *Library) UpdateSubscription(id string) (int, error) {
 
 	n, err := l.updateSubscription(sub)
 	if err != nil {
-		l.Log.Printf("подписка %s: %v", sub.URL, err)
+		l.Log.Printf("подписка %s: %v", id, err)
 	}
-	_ = l.Store.Update(func(d *store.Data) {
+	saveErr := l.Store.Update(func(d *store.Data) {
 		for _, s := range d.Subscriptions {
-			if s.ID == id {
+			if s.ID == id && s.URL == sub.URL {
 				s.LastError = ""
+				s.LastAttempt = time.Now().Unix()
 				if err != nil {
 					s.LastError = err.Error()
 				}
 			}
 		}
 	})
-	l.changed()
-	return n, err
+	return n, errors.Join(err, saveErr)
+}
+
+func (l *Library) RefreshingSubscriptions() []string {
+	l.refreshMu.Lock()
+	defer l.refreshMu.Unlock()
+	ids := make([]string, 0, len(l.refreshing))
+	for id := range l.refreshing {
+		ids = append(ids, id)
+	}
+	return ids
 }
 
 func (l *Library) updateSubscription(sub store.Subscription) (int, error) {
@@ -330,9 +374,9 @@ func (l *Library) updateSubscription(sub store.Subscription) (int, error) {
 		s.SubID = sub.ID
 	}
 
-	err = l.Store.Update(func(d *store.Data) {
+	err = l.Store.Edit(func(d *store.Data) error {
 		for _, s := range d.Subscriptions {
-			if s.ID != sub.ID {
+			if s.ID != sub.ID || s.URL != sub.URL {
 				continue
 			}
 			s.Title = info.Title
@@ -347,20 +391,20 @@ func (l *Library) updateSubscription(sub store.Subscription) (int, error) {
 					s.Title = u.Host
 				}
 			}
-			// Metadata counts as a successful update even without servers,
-			// so expired subscriptions are not re-fetched on every tick.
-			s.Updated = time.Now().Unix()
+			if len(servers) > 0 {
+				s.Updated = time.Now().Unix()
+				replaceSubscriptionServers(d, sub.ID, servers)
+			}
+			return nil
 		}
-		if len(servers) > 0 {
-			replaceSubscriptionServers(d, sub.ID, servers)
-		}
+		return errors.New("подписка не найдена")
 	})
 	if err != nil {
 		return 0, err
 	}
 	if len(servers) == 0 {
 		if len(errs) > 0 {
-			return 0, fmt.Errorf("в подписке нет рабочих ссылок: %v", errs[0])
+			return 0, errors.New("в подписке нет рабочих ссылок")
 		}
 		return 0, errors.New("подписка не вернула ни одного сервера")
 	}
@@ -369,19 +413,22 @@ func (l *Library) updateSubscription(sub store.Subscription) (int, error) {
 }
 
 func replaceSubscriptionServers(d *store.Data, subID string, servers []*profile.Server) {
-	// Keep the selection if the same server (by link) is still present.
-	var selectedLink string
+	oldByLink := make(map[string][]*profile.Server)
 	for _, s := range d.Servers {
-		if s.ID == d.Selected && s.SubID == subID {
-			selectedLink = s.Link
+		if s.SubID == subID {
+			oldByLink[s.Link] = append(oldByLink[s.Link], s)
 		}
 	}
-	// The relay chosen for a server (multi-tunnel) survives the refresh if
-	// the same link comes back with it.
-	viaByLink := map[string]string{}
-	for _, s := range d.Servers {
-		if s.SubID == subID && s.Via != "" {
-			viaByLink[s.Link] = s.Via
+	for _, s := range servers {
+		if old := oldByLink[s.Link]; len(old) > 0 {
+			s.ID, s.Via = old[0].ID, old[0].Via
+			if s.PinnedSHA == "" {
+				s.PinnedSHA = old[0].PinnedSHA
+			}
+			if s.OVPN != nil && old[0].OVPN != nil {
+				s.OVPN.Username, s.OVPN.Password = old[0].OVPN.Username, old[0].OVPN.Password
+			}
+			oldByLink[s.Link] = old[1:]
 		}
 	}
 	// Replace in place to keep the subscription's position in the list.
@@ -401,30 +448,7 @@ func replaceSubscriptionServers(d *store.Data, subID string, servers []*profile.
 		out = append(out, servers...)
 	}
 	d.Servers = out
-	if len(viaByLink) > 0 {
-		for _, s := range d.Servers {
-			if s.SubID != subID || s.Via != "" {
-				continue
-			}
-			if old, ok := viaByLink[s.Link]; ok {
-				for _, x := range d.Servers {
-					if x.ID == old {
-						s.Via = old
-						break
-					}
-				}
-			}
-		}
-	}
-	if selectedLink != "" {
-		d.Selected = ""
-		for _, s := range servers {
-			if s.Link == selectedLink {
-				d.Selected = s.ID
-			}
-		}
-	}
-	if d.Selected == "" {
+	if !slices.ContainsFunc(out, func(s *profile.Server) bool { return s.ID == d.Selected }) {
 		d.Selected = servers[0].ID
 	}
 }
@@ -476,7 +500,7 @@ func (l *Library) AutoUpdateLoop() {
 				if hours <= 0 {
 					hours = 12
 				}
-				if now-s.Updated >= int64(hours)*3600 {
+				if now-max(s.Updated, s.LastAttempt) >= int64(hours)*3600 {
 					due = append(due, s.ID)
 				}
 			}
@@ -490,21 +514,51 @@ func (l *Library) AutoUpdateLoop() {
 
 // Fetch downloads a URL with the client from HTTP.
 func (l *Library) Fetch(rawURL string) (string, http.Header, error) {
-	client := l.HTTP(30 * time.Second)
+	c := *l.HTTP(30 * time.Second)
+	client := &c
+	checkRedirect := c.CheckRedirect
+	c.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		if !isWebURL(req.URL) || len(via) >= 10 ||
+			(len(via) > 0 && via[len(via)-1].URL.Scheme == "https" && req.URL.Scheme != "https") {
+			return errors.New("небезопасное перенаправление подписки")
+		}
+		if checkRedirect != nil {
+			return checkRedirect(req, via)
+		}
+		return nil
+	}
+	defer client.CloseIdleConnections()
 	req, err := http.NewRequest(http.MethodGet, rawURL, nil)
-	if err != nil {
-		return "", nil, err
+	if err != nil || !isWebURL(req.URL) {
+		return "", nil, errors.New("неверный URL подписки")
 	}
 	// Most panels return the base64 link list for v2rayN-like clients.
 	req.Header.Set("User-Agent", "v2rayN/7.0")
 	resp, err := client.Do(req)
 	if err != nil {
+		var uerr *url.Error
+		if errors.As(err, &uerr) {
+			err = uerr.Err
+		}
 		return "", nil, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		return "", nil, fmt.Errorf("HTTP %d", resp.StatusCode)
 	}
-	b, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
+	const limit = 8 << 20
+	b, err := io.ReadAll(io.LimitReader(resp.Body, limit+1))
+	if len(b) > limit {
+		return "", nil, errors.New("файл слишком большой")
+	}
 	return string(b), resp.Header, err
+}
+
+func IsWebURL(raw string) bool {
+	u, err := url.Parse(raw)
+	return err == nil && isWebURL(u)
+}
+
+func isWebURL(u *url.URL) bool {
+	return u != nil && u.Hostname() != "" && (u.Scheme == "http" || u.Scheme == "https")
 }

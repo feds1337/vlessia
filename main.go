@@ -140,7 +140,7 @@ func (r *rotatingFile) open() error {
 	if fi, err := os.Stat(r.path); err == nil && fi.Size() > r.max {
 		_ = os.Rename(r.path, r.path+".old")
 	}
-	f, err := os.OpenFile(r.path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	f, err := os.OpenFile(r.path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 	if err != nil {
 		return err
 	}
@@ -158,6 +158,7 @@ func (r *rotatingFile) Write(p []byte) (int, error) {
 	defer r.mu.Unlock()
 	if r.size+int64(len(p)) > r.max {
 		_ = r.f.Close()
+		_ = os.Rename(r.path, r.path+".old")
 		if err := r.open(); err != nil {
 			return 0, err
 		}

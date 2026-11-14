@@ -1,9 +1,18 @@
 package update
 
 import (
+	"context"
+	"net/http"
 	"strings"
 	"testing"
 )
+
+func TestDownloadRequiresChecksums(t *testing.T) {
+	rel := &Release{setupURL: "unused", setupName: "installer.exe", size: 1}
+	if _, err := Download(context.Background(), &http.Client{}, rel, t.TempDir(), nil); err == nil || !strings.Contains(err.Error(), "SHA256SUMS.txt") {
+		t.Fatalf("installer without a checksum manifest: %v", err)
+	}
+}
 
 func TestNewer(t *testing.T) {
 	for _, c := range []struct {

@@ -34,6 +34,7 @@ type Bridge interface {
 // OpenVPN, the userspace tunnel behind it.
 type Engine struct {
 	Inst     *xray.Instance
+	HTTPPort int
 	Bridge   Bridge
 	bridge2  Bridge // the relay's (via) tunnel, when it is a full tunnel
 	ServerIP string // resolved server address, "" if not needed
@@ -84,6 +85,12 @@ func balanceGroup(lib *Library, srv *profile.Server, settings store.Settings, lo
 	var all []*profile.Server
 	for _, s := range lib.AllServers() {
 		if s.SubID == srv.SubID && !s.IsFullTunnel() {
+			if s.ID == srv.ID {
+				s = srv
+			}
+			if s.Protocol == "hysteria2" && s.Insecure && s.PinnedSHA == "" {
+				continue
+			}
 			all = append(all, s)
 		}
 	}
@@ -133,24 +140,19 @@ func balanceGroup(lib *Library, srv *profile.Server, settings store.Settings, lo
 // group for no reason.
 func healthyGroup(servers []*profile.Server, logger *log.Logger) []*profile.Server {
 	dialer := &net.Dialer{Timeout: 3 * time.Second}
-	alive := make([]bool, len(servers))
-	var wg sync.WaitGroup
-	for i, s := range servers {
-		wg.Add(1)
-		go func(i int, s *profile.Server) {
-			defer wg.Done()
-			ms := PingServer(s, dialer)
-			alive[i] = ms != -1
-			if ms == -1 {
-				logger.Printf("балансировка: %s не отвечает, пропускаю", s.Name)
-			}
-		}(i, s)
-	}
-	wg.Wait()
+	alive := make(map[string]bool, len(servers))
+	var mu sync.Mutex
+	PingAll(servers, dialer, func(id string, ms int64) {
+		mu.Lock()
+		alive[id] = ms != -1
+		mu.Unlock()
+	})
 	out := make([]*profile.Server, 0, len(servers))
-	for i, s := range servers {
-		if alive[i] {
+	for _, s := range servers {
+		if alive[s.ID] {
 			out = append(out, s)
+		} else {
+			logger.Printf("балансировка: %s не отвечает, пропускаю", s.Name)
 		}
 	}
 	return out
@@ -158,7 +160,7 @@ func healthyGroup(servers []*profile.Server, logger *log.Logger) []*profile.Serv
 
 // StartEngine launches everything needed for srv in settings.Mode: the
 // WireGuard/AmneziaWG/OpenVPN bridge if any, then Xray. dir receives
-// xray.log and xray-config.json. srv is a copy and may be modified.
+// xray.log. srv is a copy and may be modified.
 func StartEngine(lib *Library, srv *profile.Server, settings store.Settings, dir string, hooks Hooks) (*Engine, error) {
 	logger := lib.Log
 	opts := xray.Options{
@@ -203,7 +205,7 @@ func StartEngine(lib *Library, srv *profile.Server, settings store.Settings, dir
 	// Resolve the server now: once TUN is up, system DNS would go into the
 	// tunnel that needs this very address to work. WireGuard and the
 	// Hysteria probe need an IP anyway.
-	e := &Engine{}
+	e := &Engine{HTTPPort: settings.HTTPPort}
 	if settings.Mode == "tun" || srv.IsFullTunnel() || srv.Protocol == "hysteria2" {
 		ip, err := Resolve(srv.Address)
 		if err != nil {
@@ -229,6 +231,9 @@ func StartEngine(lib *Library, srv *profile.Server, settings store.Settings, dir
 				return nil, fmt.Errorf("Hysteria: релей не отвечает: %w", err)
 			}
 			via.PinnedSHA = res.CertSHA256
+			if err := lib.saveCertificatePin(via); err != nil {
+				return nil, err
+			}
 			logger.Printf("Hysteria: релей с insecure=1, закреплён его сертификат %s", via.PinnedSHA)
 		}
 	}
@@ -247,6 +252,9 @@ func StartEngine(lib *Library, srv *profile.Server, settings store.Settings, dir
 			return nil, fmt.Errorf("Hysteria: сервер не отвечает: %w", err)
 		}
 		srv.PinnedSHA = res.CertSHA256
+		if err := lib.saveCertificatePin(srv); err != nil {
+			return nil, err
+		}
 		logger.Printf("Hysteria: ссылка с insecure=1, закреплён текущий сертификат сервера %s", res.CertSHA256)
 	}
 
@@ -343,8 +351,9 @@ func StartEngine(lib *Library, srv *profile.Server, settings store.Settings, dir
 		return nil, err
 	}
 	// Xray appends to its log; keep only the current session.
-	_ = os.Truncate(opts.LogFile, 0)
-	_ = os.WriteFile(filepath.Join(dir, "xray-config.json"), cfg, 0o600)
+	if f, err := os.OpenFile(opts.LogFile, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600); err == nil {
+		_ = f.Close()
+	}
 
 	if hooks.BeforeXray != nil {
 		release, err := hooks.BeforeXray(&opts)
@@ -361,6 +370,21 @@ func StartEngine(lib *Library, srv *profile.Server, settings store.Settings, dir
 	}
 	e.Inst = inst
 	return e, nil
+}
+
+func (l *Library) saveCertificatePin(server *profile.Server) error {
+	return l.Store.Edit(func(d *store.Data) error {
+		for _, s := range d.Servers {
+			if s.ID == server.ID && s.Link == server.Link {
+				if s.PinnedSHA != "" && s.PinnedSHA != server.PinnedSHA {
+					return errors.New("сертификат сервера изменился")
+				}
+				s.PinnedSHA = server.PinnedSHA
+				return nil
+			}
+		}
+		return errors.New("сервер не найден")
+	})
 }
 
 // CloseXray stops Xray and releases what BeforeXray handed over.

@@ -63,6 +63,9 @@ func ParseOpenVPNConf(text, name string) (*Server, error) {
 
 // ParseOpenVPNProfile parses an .ovpn profile with the given credentials.
 func ParseOpenVPNProfile(text, user, pass string) (*ovpn.Parsed, error) {
+	if err := checkOpenVPNFileReferences(text); err != nil {
+		return nil, err
+	}
 	p, err := ovpn.Parse(strings.NewReader(text), &ovpn.ParseOptions{
 		Username: user,
 		Password: pass,
@@ -74,6 +77,49 @@ func ParseOpenVPNProfile(text, user, pass string) (*ovpn.Parsed, error) {
 		return nil, OpenVPNError(err)
 	}
 	return p, nil
+}
+
+// The parser can open paths relative to the process or the filesystem root.
+// Imported profiles may come from subscriptions and must be self-contained.
+func checkOpenVPNFileReferences(text string) error {
+	var closeTag string
+	for raw := range strings.SplitSeq(strings.TrimPrefix(text, "\ufeff"), "\n") {
+		line := strings.TrimSpace(raw)
+		if closeTag != "" {
+			if line == closeTag {
+				closeTag = ""
+			}
+			continue
+		}
+		if line == "" || line[0] == '#' || line[0] == ';' {
+			continue
+		}
+		if strings.HasPrefix(line, "<") {
+			tag, rest, ok := strings.Cut(line, ">")
+			if rest = strings.TrimSpace(rest); ok && !strings.HasPrefix(tag, "</") &&
+				(rest == "" || rest[0] == '#' || rest[0] == ';') {
+				closeTag = "</" + tag[1:] + ">"
+				continue
+			}
+		}
+		end := strings.IndexAny(line, " \t#;")
+		name, rest := line, ""
+		if end >= 0 {
+			name, rest = line[:end], strings.TrimSpace(line[end:])
+		}
+		if strings.ContainsAny(name, "'\"\\") {
+			return errors.New("OpenVPN: недопустимое имя директивы")
+		}
+		switch name {
+		case "ca", "cert", "key", "tls-crypt", "tls-crypt-v2", "tls-auth":
+			return errors.New("OpenVPN: сертификаты и ключи должны быть внутри профиля")
+		case "auth-user-pass":
+			if rest != "" && rest[0] != '#' && rest[0] != ';' {
+				return errors.New("OpenVPN: введите логин и пароль в приложении")
+			}
+		}
+	}
+	return nil
 }
 
 // OpenVPNError turns go-openvpn policy errors into actionable messages.

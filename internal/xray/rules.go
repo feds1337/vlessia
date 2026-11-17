@@ -3,6 +3,7 @@ package xray
 import (
 	"fmt"
 	"net"
+	"net/url"
 	"regexp"
 	"strings"
 )
@@ -29,7 +30,7 @@ func ParseRules(lines []string) (domains, ips []string, err error) {
 			if _, err := regexp.Compile(r[len("regexp:"):]); err != nil {
 				return nil, nil, fmt.Errorf("правило %q: неверное регулярное выражение", r)
 			}
-			domains = append(domains, r)
+			domains = append(domains, "regexp:"+r[len("regexp:"):])
 		case strings.HasPrefix(low, "keyword:"), strings.HasPrefix(low, "full:"), strings.HasPrefix(low, "domain:"):
 			if strings.TrimSpace(r[strings.Index(r, ":")+1:]) == "" {
 				return nil, nil, fmt.Errorf("правило %q: пустое значение", r)
@@ -43,12 +44,25 @@ func ParseRules(lines []string) (domains, ips []string, err error) {
 				continue
 			}
 			d := strings.TrimSuffix(strings.TrimPrefix(low, "*."), ".")
-			// Pasted URLs: keep just the host.
-			if i := strings.Index(d, "://"); i >= 0 {
-				d = d[i+3:]
-			}
-			if i := strings.IndexAny(d, "/:?"); i >= 0 {
-				d = d[:i]
+			if strings.Contains(d, "://") {
+				u, err := url.Parse(d)
+				if err != nil || u.Hostname() == "" || (u.Scheme != "https" && u.Scheme != "http") {
+					return nil, nil, fmt.Errorf("правило %q: неверный URL", r)
+				}
+				d = u.Hostname()
+				if net.ParseIP(d) != nil {
+					ips = append(ips, d)
+					continue
+				}
+			} else {
+				// A malformed CIDR must not silently become a domain rule.
+				host, _, _ := strings.Cut(d, "/")
+				if strings.Contains(d, "/") && net.ParseIP(host) != nil {
+					return nil, nil, fmt.Errorf("правило %q: неверная подсеть", r)
+				}
+				if i := strings.IndexAny(d, "/:?"); i >= 0 {
+					d = d[:i]
+				}
 			}
 			if !ruleDomain.MatchString(d) {
 				return nil, nil, fmt.Errorf("правило %q: это не домен, IP или подсеть", r)

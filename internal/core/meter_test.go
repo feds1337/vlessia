@@ -44,6 +44,10 @@ func TestMeter(t *testing.T) {
 	if stored.Day != "2026-10-15" {
 		t.Fatalf("stored %+v", stored)
 	}
+	days := again.History().Days
+	if len(days) != 30 || days[28].Down != (HistoryLen+10)*10 || days[29].Down != 50 {
+		t.Fatalf("daily history after restart: %+v", days)
+	}
 }
 
 func TestWatchdog(t *testing.T) {

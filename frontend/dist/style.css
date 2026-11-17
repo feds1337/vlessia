@@ -323,6 +323,19 @@ main {
 .view { display: none; flex: 1; min-height: 0; flex-direction: column; padding-top: 16px; }
 .view.active { display: flex; }
 
+.traffic-chart {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: 4px;
+  align-items: end;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--line);
+  margin: 16px 0;
+}
+.traffic-chart meter { width: 100%; height: 88px; writing-mode: vertical-lr; direction: rtl; accent-color: var(--lagoon); }
+.history-list { display: grid; gap: 5px; margin: 10px 0; padding-left: 22px; overflow-wrap: anywhere; }
+
 .bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 10px; }
 
 .btn {
@@ -598,7 +611,44 @@ dialog h2 { margin: 0; font-size: 18px; font-weight: 650; letter-spacing: -.01em
 .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 6px; }
 .dialog-actions .left { margin-right: auto; margin-left: -14px; }
 
-.notes { max-height: 300px; overflow-y: auto; white-space: pre-wrap; font-size: 13.5px; user-select: text; }
+#notes-dialog {
+  width: 680px;
+  max-height: calc(100vh - 32px);
+  max-height: calc(100dvh - 32px);
+  overflow: hidden;
+}
+#notes-dialog form { max-height: inherit; box-sizing: border-box; }
+#notes-dialog h2, #notes-dialog .dialog-actions { flex-shrink: 0; }
+.notes {
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  overflow-wrap: anywhere;
+  padding: 4px 10px 4px 3px;
+  font-size: 14px;
+  line-height: 1.55;
+  user-select: text;
+}
+.notes > :first-child { margin-top: 0; }
+.notes > :last-child { margin-bottom: 0; }
+.notes h1, .notes h2, .notes h3, .notes h4, .notes h5, .notes h6 {
+  margin: 1em 0 .45em;
+  font-size: 1.1em;
+  line-height: 1.3;
+}
+.notes p, .notes ul, .notes ol, .notes blockquote, .notes pre, .notes table { margin: .6em 0; }
+.notes ul, .notes ol { padding-inline-start: 1.6em; }
+.notes li + li { margin-top: .25em; }
+.notes a { color: var(--lagoon); text-decoration: underline; text-underline-offset: .14em; }
+.notes code, .notes pre { background: var(--hover); border-radius: 4px; }
+.notes code { padding: .13em .3em; }
+.notes pre { padding: .7em; overflow: auto; }
+.notes pre code { padding: 0; background: none; }
+.notes blockquote { border-inline-start: 3px solid var(--line); padding-inline-start: 1em; color: var(--muted); }
+.notes table { border-collapse: collapse; }
+.notes th, .notes td { padding: .3em .6em; border: 1px solid var(--line); }
+.notes hr { border: 0; border-top: 1px solid var(--line); }
 
 .toasts { position: fixed; right: 24px; bottom: 20px; display: flex; flex-direction: column; gap: 8px; z-index: 10; }
 .toast {
@@ -932,3 +982,8 @@ html.android dialog {
   max-height: 88vh;
 }
 html.android dialog form { padding-bottom: calc(var(--inset-bottom, 0px) + 14px); }
+html.android #notes-dialog {
+  width: 100%;
+  max-height: calc(100vh - var(--inset-top, 0px) - var(--inset-bottom, 0px) - 12px);
+  max-height: calc(100dvh - var(--inset-top, 0px) - var(--inset-bottom, 0px) - 12px);
+}

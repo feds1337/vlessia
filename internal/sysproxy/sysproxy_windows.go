@@ -63,6 +63,11 @@ func Enable(hostPort string) error {
 	return Set(State{Enable: 1, Server: hostPort, Override: Bypass})
 }
 
+func Active(hostPort string) bool {
+	s, err := Get()
+	return err == nil && s.Enable == 1 && s.Server == hostPort
+}
+
 var (
 	wininet           = windows.NewLazySystemDLL("wininet.dll")
 	internetSetOption = wininet.NewProc("InternetSetOptionW")

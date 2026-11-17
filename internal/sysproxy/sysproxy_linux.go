@@ -176,3 +176,23 @@ func Enable(hostPort string) error {
 	}
 	return ErrUnsupported
 }
+
+func Active(hostPort string) bool {
+	host, port, err := net.SplitHostPort(hostPort)
+	if err != nil {
+		return false
+	}
+	s, err := Get()
+	if err != nil {
+		return false
+	}
+	v := s.Values
+	if s.Desktop == "kde" {
+		target := "http://" + host + " " + port
+		return v["ProxyType"] == "1" && v["httpProxy"] == target && v["httpsProxy"] == target
+	}
+	const prefix = "org.gnome.system.proxy"
+	return strings.Trim(v[prefix+" mode"], "'") == "manual" &&
+		strings.Trim(v[prefix+".http host"], "'") == host && v[prefix+".http port"] == port &&
+		strings.Trim(v[prefix+".https host"], "'") == host && v[prefix+".https port"] == port
+}

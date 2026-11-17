@@ -51,7 +51,7 @@ func apply(info *Info, get func(string) string) {
 	info.Announce = decodeValue(get("announce"))
 	info.SupportURL = validURL(get("support-url"))
 	info.WebPageURL = validURL(get("profile-web-page-url"))
-	if n, err := strconv.ParseFloat(get("profile-update-interval"), 64); err == nil && n > 0 {
+	if n, err := strconv.ParseFloat(get("profile-update-interval"), 64); err == nil && n > 0 && n <= 24*365 {
 		info.UpdateInterval = int(math.Ceil(n))
 	}
 	if v := get("subscription-userinfo"); v != "" {
@@ -90,7 +90,7 @@ func parseUserInfo(v string, info *Info) {
 			continue
 		}
 		f, err := strconv.ParseFloat(strings.TrimSpace(val), 64)
-		if err != nil || f < 0 {
+		if err != nil || math.IsNaN(f) || f < 0 || f >= float64(math.MaxInt64) {
 			continue
 		}
 		n := int64(f)

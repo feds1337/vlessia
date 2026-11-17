@@ -13,13 +13,28 @@ on:
         default: "v0.0.0-test"
 
 permissions:
-  contents: write
+  contents: read
 
 env:
   VERSION: ${{ inputs.version || github.ref_name }}
 
 jobs:
+  ui:
+    uses: ./.github/workflows/ui.yml
+
+  version:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate version before building
+        shell: bash
+        run: |
+          if [[ ! "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9][A-Za-z0-9.-]*)?$ ]]; then
+            echo "::error::Expected a release version such as v0.7.0 or v0.7.0-beta.1"
+            exit 1
+          fi
+
   windows:
+    needs: version
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -40,18 +55,30 @@ jobs:
         shell: pwsh
         run: |
           # The installer needs a plain x.y.z version (no "-beta" suffix).
-          $v = "${{ env.VERSION }}".TrimStart("v") -replace "-.*", ""
+          $v = $env:VERSION.TrimStart("v") -replace "-.*", ""
           $j = Get-Content wails.json -Raw | ConvertFrom-Json
           $j.info.productVersion = $v
           $j | ConvertTo-Json -Depth 10 | Set-Content wails.json -Encoding utf8
 
       - name: Build
-        run: wails build -clean -trimpath -ldflags "-s -w -X main.version=${{ env.VERSION }}" -nsis
+        run: wails build -clean -trimpath -ldflags "-s -w -X main.version=$env:VERSION" -nsis
+
+      - name: Sign Windows executable and installer
+        shell: pwsh
+        env:
+          CERTIFICATE: ${{ secrets.WINDOWS_SIGNING_PFX_BASE64 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_SIGNING_PFX_PASSWORD }}
+        run: |
+          if (!$env:CERTIFICATE) {
+            Write-Host "Windows signing certificate not configured"
+            exit 0
+          }
+          ./.github/scripts/sign-windows.ps1
 
       - name: Package
         shell: pwsh
         run: |
-          $v = "${{ env.VERSION }}"
+          $v = $env:VERSION
           New-Item -ItemType Directory -Force dist | Out-Null
           Move-Item build/bin/Vlessia-amd64-installer.exe "dist/Vlessia-$v-setup.exe"
           Move-Item build/bin/Vlessia.exe "dist/Vlessia-$v-portable.exe"
@@ -62,6 +89,7 @@ jobs:
           path: dist/*
 
   macos:
+    needs: version
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -78,29 +106,23 @@ jobs:
       - name: Set version from tag
         shell: pwsh
         run: |
-          $v = "${{ env.VERSION }}".TrimStart("v") -replace "-.*", ""
+          $v = $env:VERSION.TrimStart("v") -replace "-.*", ""
           $j = Get-Content wails.json -Raw | ConvertFrom-Json
           $j.info.productVersion = $v
           $j | ConvertTo-Json -Depth 10 | Set-Content wails.json -Encoding utf8
 
       - name: Build (Intel + Apple Silicon)
-        run: wails build -clean -trimpath -platform darwin/universal -ldflags "-s -w -X main.version=${{ env.VERSION }}"
+        run: wails build -clean -trimpath -platform darwin/universal -ldflags "-s -w -X main.version=$VERSION"
 
       - name: Package
-        run: |
-          # Not notarized: an ad-hoc signature is still required to run on
-          # Apple Silicon.
-          codesign --force --deep --sign - build/bin/Vlessia.app
-          mkdir -p dist
-          # hdiutil sometimes misjudges the image size on CI runners ("No
-          # space left on device"): give it one explicitly, and retry.
-          size=$(( $(du -sm build/bin/Vlessia.app | cut -f1) + 50 ))
-          for attempt in 1 2 3; do
-            hdiutil create -volname Vlessia -srcfolder build/bin/Vlessia.app -ov -format UDZO -size "${size}m" \
-              "dist/Vlessia-${{ env.VERSION }}-macos-universal.dmg" && break
-            [ "$attempt" = 3 ] && exit 1
-            sleep 10
-          done
+        env:
+          CERTIFICATE: ${{ secrets.MACOS_SIGNING_P12_BASE64 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.MACOS_SIGNING_P12_PASSWORD }}
+          SIGNING_IDENTITY: ${{ vars.MACOS_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.MACOS_NOTARY_APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.MACOS_NOTARY_TEAM_ID }}
+          APPLE_PASSWORD: ${{ secrets.MACOS_NOTARY_APP_PASSWORD }}
+        run: bash .github/scripts/package-macos.sh
 
       - uses: actions/upload-artifact@v4
         with:
@@ -108,6 +130,7 @@ jobs:
           path: dist/*
 
   linux:
+    needs: version
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -127,11 +150,11 @@ jobs:
         run: go test -tags webkit2_41 ./internal/...
 
       - name: Build
-        run: wails build -clean -trimpath -tags webkit2_41 -ldflags "-s -w -X main.version=${{ env.VERSION }}"
+        run: wails build -clean -trimpath -tags webkit2_41 -ldflags "-s -w -X main.version=$VERSION"
 
       - name: Package
         run: |
-          v="${{ env.VERSION }}"
+          v="$VERSION"
           ver="${v#v}"
           mkdir -p dist
 
@@ -169,6 +192,7 @@ jobs:
           path: dist/*
 
   android:
+    needs: version
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -206,13 +230,13 @@ jobs:
           export VLESSIA_KEYSTORE="$RUNNER_TEMP/release.jks"
           echo "$KEYSTORE_BASE64" | base64 -d > "$VLESSIA_KEYSTORE"
           bash android/build-core.sh
-          cd android && bash ./gradlew --no-daemon assembleRelease -PvlessiaVersion=${{ env.VERSION }}
+          cd android && bash ./gradlew --no-daemon assembleRelease "-PvlessiaVersion=$VERSION"
 
       - name: Package
         run: |
           mkdir -p dist
           for abi in arm64-v8a armeabi-v7a x86_64 universal; do
-            cp "android/app/build/outputs/apk/release/app-$abi-release.apk" "dist/Vlessia-${{ env.VERSION }}-android-$abi.apk"
+            cp "android/app/build/outputs/apk/release/app-$abi-release.apk" "dist/Vlessia-$VERSION-android-$abi.apk"
           done
           ls -la dist
 
@@ -222,10 +246,16 @@ jobs:
           path: dist/*
 
   publish:
-    needs: [windows, macos, linux, android]
+    needs: [ui, windows, macos, linux, android]
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
     steps:
+      - uses: actions/checkout@v4
+
       - uses: actions/download-artifact@v4
         with:
           path: dist
@@ -235,8 +265,33 @@ jobs:
         # The in-app updater verifies the installer against this file.
         run: cd dist && sha256sum * > SHA256SUMS.txt && cat SHA256SUMS.txt
 
+      - name: Attest release files
+        uses: actions/attest@v4
+        with:
+          subject-path: dist/*
+
+      - name: Select release notes
+        id: notes
+        shell: bash
+        run: |
+          path="docs/releases/$VERSION.md"
+          if [[ -f "$path" ]]; then
+            echo "path=$path" >> "$GITHUB_OUTPUT"
+            echo "generate=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "generate=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - uses: softprops/action-gh-release@v2
         with:
           files: dist/*
-          generate_release_notes: true
+          fail_on_unmatched_files: true
+          body_path: ${{ steps.notes.outputs.path }}
+          generate_release_notes: ${{ steps.notes.outputs.generate }}
+          draft: true
           prerelease: ${{ contains(github.ref_name, '-') }}
+
+      - name: Publish after uploading the files
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release edit "$VERSION" --draft=false

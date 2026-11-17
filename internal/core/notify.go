@@ -56,8 +56,7 @@ func remindText(sub *store.Subscription, now int64) string {
 	var mask int
 	var texts []string
 	if sub.HasUserInfo && sub.Total > 0 {
-		used := sub.Upload + sub.Download
-		left := sub.Total - used
+		left := max(0, sub.Total-sub.Upload) - sub.Download
 		switch {
 		case left <= 0:
 			mask |= RemindTrafficOut

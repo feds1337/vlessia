@@ -2,6 +2,8 @@ module github.com/feds1337/vlessia
 
 go 1.27.0
 
+toolchain go1.27.4
+
 require (
 	fyne.io/systray v1.12.2
 	github.com/amnezia-vpn/amneziawg-go/v3 v3.1.20260828
@@ -13,18 +15,19 @@ require (
 	github.com/vishvananda/netlink v1.3.1
 	github.com/wailsapp/wails/v2 v2.16.0
 	github.com/xtls/xray-core v1.260327.1-0.20261021115930-1b1647cd9ddf
-	golang.org/x/crypto v0.58.0
+	github.com/yuin/goldmark v1.8.7
+	golang.org/x/crypto v0.59.0
 	golang.org/x/mobile v0.0.0-20261011034528-197770444867
-	golang.org/x/net v0.61.0
-	golang.org/x/sys v0.49.0
-	golang.org/x/text v0.43.0
+	golang.org/x/net v0.62.0
+	golang.org/x/sys v0.50.0
+	golang.org/x/text v0.44.0
 	golang.zx2c4.com/wintun v0.0.0-20230126152724-0fa3db229ce2
 	golang.zx2c4.com/wireguard/windows v1.1.1
 )
 
 require (
 	git.sr.ht/~jackmordaunt/go-toast/v2 v2.0.3 // indirect
-	github.com/andybalholm/brotli v1.2.3 // indirect
+	github.com/andybalholm/brotli v1.2.7 // indirect
 	github.com/bep/debounce v1.2.1 // indirect
 	github.com/gen2brain/shm v0.1.0 // indirect
 	github.com/ghodss/yaml v1.0.1-0.20220118164431-d8423dcdf344 // indirect
@@ -39,7 +42,7 @@ require (
 	github.com/jchv/go-winloader v0.0.0-20210711035445-715c2860da7e // indirect
 	github.com/jezek/xgb v1.1.1 // indirect
 	github.com/juju/ratelimit v1.0.2 // indirect
-	github.com/klauspost/compress v1.20.0 // indirect
+	github.com/klauspost/compress v1.20.2 // indirect
 	github.com/klauspost/cpuid/v2 v2.4.1 // indirect
 	github.com/koron/go-ssdp v0.0.4 // indirect
 	github.com/labstack/echo/v4 v4.13.3 // indirect
@@ -81,7 +84,7 @@ require (
 	golang.org/x/crypto/x509roots/fallback v0.0.0-20261020153306-9f2b28d4331a // indirect
 	golang.org/x/exp v0.0.0-20250711185948-6ae5c78190dc // indirect
 	golang.org/x/mod v0.42.0 // indirect
-	golang.org/x/sync v0.24.0 // indirect
+	golang.org/x/sync v0.25.0 // indirect
 	golang.org/x/time v0.15.0 // indirect
 	golang.org/x/tools v0.52.0 // indirect
 	golang.org/x/xerrors v0.0.0-20200804184101-5ec99f83aff1 // indirect

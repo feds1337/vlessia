@@ -91,3 +91,15 @@ func TestRulesInConfig(t *testing.T) {
 		t.Error("domain-only rules should keep AsIs")
 	}
 }
+
+func TestRuleURLAndCIDR(t *testing.T) {
+	for _, bad := range []string{"10.0.0.0/99", "2001:db8::/200", "https:///missing", "ftp://example.com"} {
+		if _, _, err := ParseRules([]string{bad}); err == nil {
+			t.Errorf("accepted %q", bad)
+		}
+	}
+	domains, ips, err := ParseRules([]string{"https://[2001:db8::1]/path", "REGEXP:^UPPER"})
+	if err != nil || len(ips) != 1 || ips[0] != "2001:db8::1" || len(domains) != 1 || domains[0] != "regexp:^UPPER" {
+		t.Fatalf("%v %v %v", domains, ips, err)
+	}
+}

@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/feds1337/vlessia/internal/store"
 	"github.com/feds1337/vlessia/internal/tun"
 )
 
@@ -46,6 +47,11 @@ func (a *App) netWatch() {
 
 		if a.instance() == nil {
 			continue // nothing to reconnect
+		}
+		var disabled bool
+		a.store.Read(func(d *store.Data) { disabled = d.Settings.NoAutoReconnect })
+		if disabled {
+			continue
 		}
 		if now.Sub(lastReconnect) < 30*time.Second {
 			continue

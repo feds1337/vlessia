@@ -12,8 +12,10 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 )
@@ -21,11 +23,13 @@ import (
 // Repo is the GitHub repository releases are published to.
 const Repo = "feds1337/vlessia"
 
+var releaseTag = regexp.MustCompile("^v[0-9]+[.][0-9]+[.][0-9]+$")
+
 // Release describes the latest published version.
 type Release struct {
-	Version string `json:"version"` // tag, e.g. "v0.2.0"
-	Notes   string `json:"notes"`   // release description (markdown)
-	PageURL string `json:"pageUrl"`
+	Version   string `json:"version"`   // tag, e.g. "v0.2.0"
+	NotesHTML string `json:"notesHtml"` // release description rendered from Markdown
+	PageURL   string `json:"pageUrl"`
 
 	setupURL  string
 	setupName string
@@ -47,6 +51,7 @@ func Latest(ctx context.Context, client *http.Client) (*Release, error) {
 	}
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("User-Agent", "Vlessia-updater")
+	defer client.CloseIdleConnections()
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
@@ -58,7 +63,6 @@ func Latest(ctx context.Context, client *http.Client) (*Release, error) {
 	var r struct {
 		TagName string `json:"tag_name"`
 		Body    string `json:"body"`
-		HTMLURL string `json:"html_url"`
 		Assets  []struct {
 			Name string `json:"name"`
 			URL  string `json:"browser_download_url"`
@@ -68,12 +72,21 @@ func Latest(ctx context.Context, client *http.Client) (*Release, error) {
 	if err := json.NewDecoder(io.LimitReader(resp.Body, 4<<20)).Decode(&r); err != nil {
 		return nil, err
 	}
-	rel := &Release{Version: r.TagName, Notes: r.Body, PageURL: r.HTMLURL}
+	if !releaseTag.MatchString(r.TagName) {
+		return nil, errors.New("неверная версия релиза")
+	}
+	base := "https://github.com/" + Repo
+	rel := &Release{Version: r.TagName, NotesHTML: renderNotes(r.Body), PageURL: base + "/releases/tag/" + r.TagName}
+	prefix := "Vlessia-" + r.TagName
 	for _, a := range r.Assets {
+		if a.URL != base+"/releases/download/"+r.TagName+"/"+a.Name || a.Size <= 0 {
+			continue
+		}
 		switch {
-		case strings.HasSuffix(strings.ToLower(a.Name), "-setup.exe"):
+		case a.Name == prefix+"-setup.exe":
 			rel.setupURL, rel.setupName, rel.size = a.URL, a.Name, a.Size
-		case strings.HasSuffix(strings.ToLower(a.Name), ".apk"):
+		case a.Name == prefix+"-android-arm64-v8a.apk", a.Name == prefix+"-android-armeabi-v7a.apk",
+			a.Name == prefix+"-android-x86_64.apk", a.Name == prefix+"-android-universal.apk":
 			rel.apks = append(rel.apks, asset{a.Name, a.URL, a.Size})
 		case a.Name == "SHA256SUMS.txt":
 			rel.sumsURL = a.URL
@@ -142,24 +155,28 @@ func (r *Release) ForAndroid(abi string) *Release {
 // CanInstall reports whether the release has an installer to apply.
 func (r *Release) CanInstall() bool { return r.setupURL != "" }
 
-// Download fetches the installer into dir and verifies its size and, when
-// the release publishes SHA256SUMS.txt, its checksum.
+// Download verifies both the installer size and the published SHA-256.
 func Download(ctx context.Context, client *http.Client, r *Release, dir string, progress func(done, total int64)) (string, error) {
 	if !r.CanInstall() {
 		return "", errors.New("в релизе нет установщика")
 	}
-	want := ""
-	if r.sumsURL != "" {
-		sums, err := fetchSums(ctx, client, r.sumsURL)
-		if err != nil {
-			return "", fmt.Errorf("не удалось получить контрольные суммы: %w", err)
-		}
-		if want = sums[r.setupName]; want == "" {
-			return "", fmt.Errorf("в SHA256SUMS.txt нет %s", r.setupName)
-		}
+	if r.sumsURL == "" {
+		return "", errors.New("в релизе нет SHA256SUMS.txt")
+	}
+	if r.size <= 0 || r.size > 512<<20 || !filepath.IsLocal(r.setupName) || r.setupName != filepath.Base(r.setupName) {
+		return "", errors.New("неверный файл обновления")
+	}
+	defer client.CloseIdleConnections()
+	sums, err := fetchSums(ctx, client, r.sumsURL)
+	if err != nil {
+		return "", fmt.Errorf("не удалось получить контрольные суммы: %w", err)
+	}
+	want := sums[r.setupName]
+	if want == "" {
+		return "", fmt.Errorf("в SHA256SUMS.txt нет %s", r.setupName)
 	}
 
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", err
 	}
 	path := filepath.Join(dir, r.setupName)
@@ -175,7 +192,7 @@ func Download(ctx context.Context, client *http.Client, r *Release, dir string, 
 		return "", err
 	}
 	req.Header.Set("User-Agent", "Vlessia-updater")
-	resp, err := client.Do(req)
+	resp, err := downloadClient(client).Do(req)
 	if err != nil {
 		return "", err
 	}
@@ -183,31 +200,28 @@ func Download(ctx context.Context, client *http.Client, r *Release, dir string, 
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("загрузка: HTTP %d", resp.StatusCode)
 	}
-	part := path + ".part"
-	f, err := os.Create(part)
+	f, err := os.CreateTemp(dir, "download-*.part")
 	if err != nil {
 		return "", err
 	}
+	part := f.Name()
+	defer os.Remove(part)
 	h := sha256.New()
 	pw := &progressWriter{total: r.size, report: progress}
-	n, err := io.Copy(io.MultiWriter(f, h, pw), resp.Body)
+	n, err := io.Copy(io.MultiWriter(f, h, pw), io.LimitReader(resp.Body, r.size+1))
 	if cerr := f.Close(); err == nil {
 		err = cerr
 	}
 	if err != nil {
-		_ = os.Remove(part)
 		return "", err
 	}
 	if r.size > 0 && n != r.size {
-		_ = os.Remove(part)
 		return "", fmt.Errorf("файл скачан не полностью (%d из %d байт)", n, r.size)
 	}
-	if want != "" && !strings.EqualFold(hex.EncodeToString(h.Sum(nil)), want) {
-		_ = os.Remove(part)
+	if !strings.EqualFold(hex.EncodeToString(h.Sum(nil)), want) {
 		return "", errors.New("контрольная сумма установщика не совпала")
 	}
 	if err := os.Rename(part, path); err != nil {
-		_ = os.Remove(part)
 		return "", err
 	}
 	return path, nil
@@ -217,8 +231,8 @@ func verifyFile(path string, wantSize int64, wantSum string) bool {
 	if wantSize <= 0 && wantSum == "" {
 		return false
 	}
-	st, err := os.Stat(path)
-	if err != nil || st.IsDir() || (wantSize > 0 && st.Size() != wantSize) {
+	st, err := os.Lstat(path)
+	if err != nil || !st.Mode().IsRegular() || (wantSize > 0 && st.Size() != wantSize) {
 		return false
 	}
 	if wantSum == "" {
@@ -242,7 +256,7 @@ func fetchSums(ctx context.Context, client *http.Client, url string) (map[string
 		return nil, err
 	}
 	req.Header.Set("User-Agent", "Vlessia-updater")
-	resp, err := client.Do(req)
+	resp, err := downloadClient(client).Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -253,6 +267,28 @@ func fetchSums(ctx context.Context, client *http.Client, url string) (map[string
 	return ParseSums(io.LimitReader(resp.Body, 1<<20)), nil
 }
 
+func downloadClient(client *http.Client) *http.Client {
+	c := *client
+	c.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		if len(via) >= 10 || !allowedAssetHost(req.URL) {
+			return errors.New("недоверенный адрес обновления")
+		}
+		return nil
+	}
+	return &c
+}
+
+func allowedAssetHost(u *url.URL) bool {
+	if u.Scheme != "https" || u.User != nil || (u.Port() != "" && u.Port() != "443") {
+		return false
+	}
+	switch u.Hostname() {
+	case "github.com", "release-assets.githubusercontent.com", "objects.githubusercontent.com":
+		return true
+	}
+	return false
+}
+
 // ParseSums parses sha256sum output: "<hex>  <name>" (also "<hex> *<name>").
 func ParseSums(r io.Reader) map[string]string {
 	out := map[string]string{}
@@ -260,6 +296,9 @@ func ParseSums(r io.Reader) map[string]string {
 	for sc.Scan() {
 		f := strings.Fields(sc.Text())
 		if len(f) == 2 && len(f[0]) == 64 {
+			if _, err := hex.DecodeString(f[0]); err != nil {
+				continue
+			}
 			out[strings.TrimPrefix(f[1], "*")] = strings.ToLower(f[0])
 		}
 	}

@@ -37,13 +37,14 @@ type Meter struct {
 	hist      []Sample
 	session   Sample
 	today     store.Traffic
+	daily     []store.Traffic
 	lastFlush time.Time
 	now       func() time.Time // for tests
 }
 
 func NewMeter(st *store.Store) *Meter {
 	m := &Meter{st: st, now: time.Now}
-	st.Read(func(d *store.Data) { m.today = d.Today })
+	st.Read(func(d *store.Data) { m.today, m.daily = d.Today, d.DailyTraffic })
 	return m
 }
 
@@ -67,6 +68,18 @@ func (m *Meter) Add(up, down int64) {
 	m.session.Down += down
 	day := m.now().Format("2006-01-02")
 	if m.today.Day != day {
+		if m.today.Day != "" {
+			m.daily = append(m.daily, m.today)
+		}
+		for i, past := range m.daily {
+			if past.Day == day {
+				m.today = past
+				m.daily = append(m.daily[:i], m.daily[i+1:]...)
+				break
+			}
+		}
+	}
+	if m.today.Day != day {
 		m.today = store.Traffic{Day: day}
 	}
 	m.today.Up += up
@@ -81,10 +94,53 @@ func (m *Meter) Add(up, down int64) {
 // Flush writes today's total to the store.
 func (m *Meter) Flush() {
 	m.mu.Lock()
-	today := m.today
+	defer m.mu.Unlock()
+	first := m.now().AddDate(0, 0, -29).Format("2006-01-02")
+	daily := make([]store.Traffic, 0, 30)
+	for _, day := range m.daily {
+		if day.Day >= first {
+			daily = append(daily, day)
+		}
+	}
+	m.daily = daily
+	_ = m.st.Update(func(d *store.Data) {
+		d.Today, d.DailyTraffic = m.today, append([]store.Traffic(nil), daily...)
+	})
 	m.lastFlush = m.now()
-	m.mu.Unlock()
-	_ = m.st.Update(func(d *store.Data) { d.Today = today })
+}
+
+type TrafficHistory struct {
+	Days        []store.Traffic    `json:"days"`
+	Connections []store.Connection `json:"connections"`
+}
+
+func (m *Meter) History() TrafficHistory {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	history := TrafficHistory{Days: make([]store.Traffic, 0, 30)}
+	totals := make(map[string]store.Traffic, len(m.daily)+1)
+	for _, day := range m.daily {
+		totals[day.Day] = day
+	}
+	totals[m.today.Day] = m.today
+	now := m.now()
+	for i := 29; i >= 0; i-- {
+		date := now.AddDate(0, 0, -i).Format("2006-01-02")
+		day := totals[date]
+		day.Day = date
+		history.Days = append(history.Days, day)
+	}
+	m.st.Read(func(d *store.Data) { history.Connections = d.Connections })
+	return history
+}
+
+func (m *Meter) RecordConnection(server, mode string) error {
+	return m.st.Update(func(d *store.Data) {
+		d.Connections = append(d.Connections, store.Connection{Started: m.now().Unix(), Server: server, Mode: mode})
+		if len(d.Connections) > 20 {
+			d.Connections = d.Connections[len(d.Connections)-20:]
+		}
+	})
 }
 
 // Info returns the current numbers.

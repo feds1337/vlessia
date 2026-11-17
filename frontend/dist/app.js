@@ -6,10 +6,17 @@ const $$ = (sel) => document.querySelectorAll(sel);
 
 let state = null;
 let upd = null;
+let shownNotes = null;
 let platform = "windows"; // "windows" | "darwin" | "linux" | "android"
-const pings = {};
+const pings = Object.create(null);
 let logsTimer = null;
 let logsBusy = false;
+let diagnosticBusy = false;
+let diagnosticSteps = [];
+let trafficDays = 30;
+let trafficHistory = null;
+let historyBusy = false;
+let refreshingAll = false;
 // Android: the apps picked for the tunnel, and the list of installed ones
 // (fetched from the native side on first use).
 let androidApps = [];
@@ -139,7 +146,7 @@ function renderServers() {
     }
     const relay = s.via ? state.servers.find((x) => x.id === s.via) : null;
     html += `
-      <div class="row ${s.id === state.selected ? (state.settings.autoBest ? "picked" : "selected") : ""}" data-id="${s.id}" tabindex="0">
+      <div class="row ${s.id === state.selected ? (state.settings.autoBest ? "picked" : "selected") : ""}" data-id="${esc(s.id)}" tabindex="0">
         <div class="row-main">
           <div class="row-name" title="${esc(s.name + " — " + s.address + ":" + s.port)}">${esc(s.name)}</div>
           <div class="row-meta"><span class="proto">${esc(protoLine(s))}</span>${relay ? `<span class="via-mini">· ${esc(t("servers.via_set", relay.name))}</span>` : ""}</div>
@@ -239,7 +246,7 @@ function renderDock() {
     disconnecting: t("status.disconnecting"), disconnected: t("dock.connect"),
   }[st.state] || t("dock.connect");
   power.disabled = st.state === "connecting" || st.state === "disconnecting";
-  $("#test-btn").disabled = st.state !== "connected";
+  $("#test-btn").disabled = diagnosticBusy || st.state === "connecting" || st.state === "disconnecting";
 
   // WireGuard, AmneziaWG and OpenVPN are full tunnels: always "Весь трафик".
   const fullTunnel = isFullTunnel(srv);
@@ -446,6 +453,9 @@ function expireLine(sub) {
 
 function renderSubs() {
   const list = $("#sub-list");
+  const refreshing = new Set(state.refreshingSubscriptions);
+  $("#refresh-subs").disabled = !state.subscriptions.length || refreshing.size > 0 || refreshingAll;
+  $("#update-subs-btn").disabled = $("#refresh-subs").disabled;
   if (!state.subscriptions.length) {
     list.innerHTML = `<div class="empty"><b>${esc(t("subs.empty"))}</b>${esc(t("subs.empty_sub"))}</div>`;
     return;
@@ -454,7 +464,7 @@ function renderSubs() {
     const count = state.servers.filter((x) => x.subId === s.id).length;
     const expire = expireLine(s);
     return `
-      <article class="sub" data-id="${s.id}">
+      <article class="sub" data-id="${esc(s.id)}">
         <div class="sub-head">
           <div>
             <div class="sub-title">${esc(subTitle(s))}</div>
@@ -463,7 +473,7 @@ function renderSubs() {
           <div class="sub-actions">
             ${s.webPageUrl ? `<button class="btn ghost small" data-act="open" data-url="${esc(s.webPageUrl)}">${esc(t("subs.site"))}</button>` : ""}
             ${s.supportUrl ? `<button class="btn ghost small" data-act="open" data-url="${esc(s.supportUrl)}">${esc(t("subs.support"))}</button>` : ""}
-            <button class="btn ghost small" data-act="update">${esc(t("subs.update"))}</button>
+            <button class="btn ghost small" data-act="update" ${refreshing.has(s.id) ? "disabled" : ""}>${esc(t("subs.update"))}</button>
             <button class="btn ghost small" data-act="rename">${esc(t("subs.rename"))}</button>
             <button class="btn ghost small" data-act="del">${esc(t("servers.del"))}</button>
           </div>
@@ -472,9 +482,77 @@ function renderSubs() {
         ${trafficBlock(s)}
         ${expire ? `<p>${expire}</p>` : ""}
         <p class="sub-foot">${esc(t("subs.foot", count, unitPlural("unit.server", count), s.updated ? fmtDate(s.updated) : t("subs.never"), s.updateInterval || 12))}</p>
+        <p class="sub-foot" role="status">${esc(t("subs.state." + (refreshing.has(s.id) ? "refreshing" : s.lastError ? "error" : s.updated ? "ready" : "pending")))}</p>
         ${s.lastError ? `<p class="sub-foot bad-text">${esc(t("subs.err", trGo(s.lastError)))}</p>` : ""}
       </article>`;
   }).join("");
+}
+
+async function refreshAllSubscriptions() {
+  if (refreshingAll) return;
+  refreshingAll = true;
+  renderSubs();
+  try {
+    await call("UpdateAllSubscriptions");
+    toast(t("toast.subs_updated"));
+  } catch { /* toast shown */ } finally {
+    refreshingAll = false;
+    renderSubs();
+  }
+}
+
+function renderDiagnostic() {
+  const list = $("#diagnostic-results");
+  if (diagnosticBusy) {
+    list.textContent = t("dock.testing");
+    return;
+  }
+  list.replaceChildren(...diagnosticSteps.map((step) => {
+    const li = document.createElement("li");
+    li.textContent = t("diag." + step.check) + " — " + t("diag." + step.result);
+    if (step.result === "ok" && step.ms > 0) li.textContent += " · " + t("diag.ms", step.ms);
+    if (step.result === "failed") {
+      const hint = document.createElement("p");
+      hint.className = "hint";
+      hint.textContent = t("diag.help." + step.check);
+      li.appendChild(hint);
+    }
+    return li;
+  }));
+}
+
+function renderTrafficHistory() {
+  if (!trafficHistory) return;
+  const days = trafficHistory.days.slice(-trafficDays);
+  const amount = (day) => day.up + day.down;
+  const peak = Math.max(1, ...days.map(amount));
+  const dayLabel = (day) => new Date(day.day + "T12:00:00").toLocaleDateString(document.documentElement.lang, {
+    day: "numeric", month: "short",
+  });
+  $("#traffic-summary").textContent = t("traffic.total", fmtBytes(days.reduce((total, day) => total + amount(day), 0)));
+  $("#traffic-chart").replaceChildren(...days.map((day) => {
+    const meter = document.createElement("meter");
+    meter.max = peak;
+    meter.value = amount(day);
+    meter.title = dayLabel(day) + " · " + fmtBytes(amount(day));
+    return meter;
+  }));
+  $("#traffic-days").innerHTML = days.map((day) => `<li>${esc(dayLabel(day))} · ${esc(t("traffic.split", fmtBytes(day.up), fmtBytes(day.down)))}</li>`).join("");
+  const connections = (trafficHistory.connections || []).slice().reverse();
+  $("#traffic-connections").innerHTML = connections.map((c) =>
+    `<li>${esc(fmtDate(c.started))} · ${esc(c.server)} · ${esc(t(c.mode === "tun" ? "dock.tun" : "dock.proxy"))}</li>`
+  ).join("") || `<li>${esc(t("traffic.empty"))}</li>`;
+}
+
+async function loadTrafficHistory() {
+  if (historyBusy) return;
+  historyBusy = true;
+  try {
+    trafficHistory = await call("GetTrafficHistory");
+    renderTrafficHistory();
+  } catch { /* toast shown */ } finally {
+    historyBusy = false;
+  }
 }
 
 // ---------- settings ----------
@@ -567,6 +645,49 @@ function renderAutostart(st) {
 
 // ---------- updates ----------
 
+function renderNotes() {
+  const content = $("#notes-body");
+  $("#notes-title").textContent = t("d.notes_version", bareVersion(upd.latest));
+  const update = $("#notes-update");
+  update.hidden = upd.state !== "available";
+  update.textContent = t(upd.installed ? "dock.update" : "dock.download");
+
+  const html = upd.notesHtml || "";
+  if (html === shownNotes && html) return;
+  shownNotes = html;
+  // Template content is inert. Keep images from making remote requests and
+  // handle web links through the native browser instead of the WebView.
+  const template = document.createElement("template");
+  template.innerHTML = html;
+  for (const img of template.content.querySelectorAll("img")) {
+    img.replaceWith(document.createTextNode(img.alt));
+  }
+  for (const link of template.content.querySelectorAll("a")) {
+    const href = link.getAttribute("href");
+    if (!href) continue;
+    try {
+      const url = new URL(href, upd.pageUrl);
+      if (url.protocol === "https:" || url.protocol === "http:") {
+        link.href = url.href;
+        continue;
+      }
+    } catch { /* malformed URL */ }
+    link.removeAttribute("href");
+  }
+  content.replaceChildren(template.content);
+  if (!content.textContent.trim()) content.textContent = t("d.notes_none");
+}
+
+function showNotes() {
+  if (!upd?.latest) return;
+  const dialog = $("#notes-dialog");
+  if (dialog.open) return;
+  renderNotes();
+  dialog.returnValue = "";
+  dialog.showModal();
+  $("#notes-body").scrollTop = 0;
+}
+
 function renderUpdate() {
   if (!upd) return;
   const banner = $("#update-banner");
@@ -595,6 +716,8 @@ function renderUpdate() {
   }[upd.state] || "";
   $("#version-line").textContent = line ? `${cur} ${line}` : cur;
   $("#check-update").disabled = upd.state === "checking" || busy;
+  $("#settings-notes").hidden = !upd.latest;
+  if ($("#notes-dialog").open) renderNotes();
 }
 
 async function applyUpdate() {
@@ -677,6 +800,7 @@ function showView(name) {
   $$(".view").forEach((v) => v.classList.toggle("active", v.id === "view-" + name));
   clearInterval(logsTimer);
   if (name === "settings") fillSettings();
+  if (name === "traffic") loadTrafficHistory();
   if (name === "logs") {
     refreshLogs();
     logsTimer = setInterval(() => !document.hidden && $("#logs-auto").checked && refreshLogs(), 2000);
@@ -703,7 +827,7 @@ function openViaDialog(id) {
   const sel = $("#via-select");
   sel.innerHTML = [`<option value="">${esc(t("d.via_none"))}</option>`]
     .concat(state.servers.filter((s) => s.id !== id)
-      .map((s) => `<option value="${s.id}">${esc(s.name + " — " + protoLine(s))}</option>`))
+      .map((s) => `<option value="${esc(s.id)}">${esc(s.name + " — " + protoLine(s))}</option>`))
     .join("");
   sel.value = srv.via || "";
   $("#via-sub").textContent = t("d.via_sub", srv.name, srv.address);
@@ -758,6 +882,12 @@ async function openAppsDialog() {
 
 const added = (n) => toast(t("toast.added", n, unitPlural("unit.server_added", n)));
 
+function showImportDialog(text = "") {
+  const dialog = $("#add-dialog");
+  $("#add-text").value = text;
+  if (!dialog.open) dialog.showModal();
+}
+
 function render() {
   if (!state) return;
   renderDock();
@@ -774,6 +904,8 @@ function applyLanguage() {
   applyPlatform();
   render();
   renderUpdate();
+  renderTrafficHistory();
+  renderDiagnostic();
   if ($("#view-settings").classList.contains("active")) fillSettings();
   enhancedSelects.forEach(syncSelect);
   document.fonts.ready.then(moveTabMark);
@@ -884,6 +1016,39 @@ function syncSelect(sel) {
 }
 
 function bind() {
+  $("#rule-builder-open").addEventListener("click", () => {
+    $("#rule-error").textContent = "";
+    $("#rule-value").value = "";
+    $("#rule-kind").value = "site";
+    $('#rule-kind option[value="app"]').disabled = platform === "android";
+    $("#rule-builder").showModal();
+    $("#rule-value").focus();
+  });
+  $("#rule-cancel").addEventListener("click", () => $("#rule-builder").close());
+  $("#rule-builder-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const btn = $("#rule-save");
+    if (btn.disabled) return;
+    btn.disabled = true;
+    $("#rule-error").textContent = "";
+    try {
+      const kind = $("#rule-kind").value;
+      const value = await api().ValidateRule(kind, $("#rule-value").value);
+      const settings = readSettings();
+      const suffix = kind === "app" ? "Apps" : "Rules";
+      const key = $("#rule-route").value + suffix;
+      const other = ($("#rule-route").value === "proxy" ? "direct" : "proxy") + suffix;
+      if (settings[other].some((r) => r.trim().toLowerCase() === value.toLowerCase())) throw new Error(t("rules.conflict"));
+      settings[key] = [...new Set([...settings[key].filter((r) => r.trim()), value])];
+      await api().SaveSettings(settings);
+      state.settings = settings;
+      fillSettings();
+      $("#rule-builder").close();
+      toast(t("toast.saved"));
+    } catch (err) {
+      $("#rule-error").textContent = trGo(String(err?.message ?? err));
+    } finally { btn.disabled = false; }
+  });
   $$("#settings-form select").forEach(enhanceSelect);
   $$("details.more").forEach(animateDetails);
   $$(".tab").forEach((b) => b.addEventListener("click", () => showView(b.dataset.view)));
@@ -892,14 +1057,43 @@ function bind() {
   $$("#mode-seg button").forEach((b) => b.addEventListener("click", () => call("SetMode", b.dataset.mode).catch(() => {})));
 
   $("#test-btn").addEventListener("click", async () => {
-    const btn = $("#test-btn");
-    btn.textContent = t("dock.testing");
+    diagnosticBusy = true;
+    diagnosticSteps = [];
+    renderDock();
+    renderDiagnostic();
+    $("#diagnostic-dialog").showModal();
     try {
-      const ms = await call("TestConnection");
-      toast(t("toast.test_ok", ms));
+      diagnosticSteps = await call("Diagnose");
     } catch { /* toast shown */ } finally {
-      btn.textContent = t("dock.test");
+      diagnosticBusy = false;
+      renderDock();
+      renderDiagnostic();
     }
+  });
+
+  $$("#view-traffic [data-days]").forEach((button) => button.addEventListener("click", () => {
+    trafficDays = Number(button.dataset.days);
+    $$("#view-traffic [data-days]").forEach((b) => {
+      b.classList.toggle("primary", b === button);
+      b.setAttribute("aria-pressed", String(b === button));
+    });
+    renderTrafficHistory();
+    loadTrafficHistory();
+  }));
+  $("#backup-export").addEventListener("click", () => call("ExportBackup")
+    .then((saved) => saved && toast(t("backup.saved"))).catch(() => {}));
+  $("#backup-restore").addEventListener("click", () => {
+    if (state.status.state !== "disconnected") return toast(t("backup.disconnect"), true);
+    $("#backup-confirm").showModal();
+  });
+  $("#backup-confirm").addEventListener("close", () => {
+    if ($("#backup-confirm").returnValue !== "restore") return;
+    call("RestoreBackup").then((restored) => {
+      if (restored) {
+        fillSettings();
+        toast(t("backup.restored"));
+      }
+    }).catch(() => {});
   });
 
   $("#paste-btn").addEventListener("click", () => call("ImportClipboard").then(added).catch(() => {}));
@@ -907,10 +1101,7 @@ function bind() {
   $("#welcome-dialog").addEventListener("close", () => {
     if ($("#welcome-dialog").returnValue === "bot") api().OpenURL(BOT_URL);
   });
-  $("#add-btn").addEventListener("click", () => {
-    $("#add-text").value = "";
-    $("#add-dialog").showModal();
-  });
+  $("#add-btn").addEventListener("click", () => showImportDialog());
   $("#add-dialog").addEventListener("close", () => {
     const v = $("#add-dialog").returnValue;
     if (v === "ok" && $("#add-text").value.trim()) call("ImportText", $("#add-text").value).then(added).catch(() => {});
@@ -928,10 +1119,8 @@ function bind() {
     renderServers();
     api().PingAll();
   });
-  $("#update-subs-btn").addEventListener("click", () => {
-    if (!state.subscriptions.length) return toast(t("toast.no_subs"), true);
-    call("UpdateAllSubscriptions").then(() => toast(t("toast.subs_updated"))).catch(() => {});
-  });
+  $("#update-subs-btn").addEventListener("click", refreshAllSubscriptions);
+  $("#refresh-subs").addEventListener("click", refreshAllSubscriptions);
   $("#search").addEventListener("input", renderServers);
 
   const list = $("#server-list");
@@ -1069,13 +1258,17 @@ function bind() {
 
   $("#check-update").addEventListener("click", () => call("CheckUpdate").catch(() => {}));
   $("#update-go").addEventListener("click", applyUpdate);
-  $("#update-notes").addEventListener("click", () => {
-    $("#notes-title").textContent = t("d.notes_version", bareVersion(upd.latest));
-    $("#notes-body").textContent = upd.notes || t("d.notes_none");
-    $("#notes-dialog").showModal();
+  $("#update-notes").addEventListener("click", showNotes);
+  $("#settings-notes").addEventListener("click", showNotes);
+  $("#notes-body").addEventListener("click", (e) => {
+    const link = e.target.closest("a[href]");
+    if (link) {
+      e.preventDefault();
+      api().OpenURL(link.href);
+    }
   });
   $("#notes-dialog").addEventListener("close", () => {
-    if ($("#notes-dialog").returnValue === "update") applyUpdate();
+    if ($("#notes-dialog").returnValue === "update" && upd.state === "available") applyUpdate();
   });
 
   window.runtime.EventsOn("state", (s) => {
@@ -1086,7 +1279,10 @@ function bind() {
     if (s.status.error === "need_admin" && prevError !== "need_admin" && !$("#admin-dialog").open) $("#admin-dialog").showModal();
     if (s.status.error === "need_ovpn_auth" && prevError !== "need_ovpn_auth" && !$("#auth-dialog").open) askCredentials(s.status.serverId, true);
   });
-  window.runtime.EventsOn("traffic", renderTraffic);
+  window.runtime.EventsOn("traffic", (sample) => {
+    renderTraffic(sample);
+    if ($("#view-traffic").classList.contains("active") && !document.hidden) loadTrafficHistory();
+  });
   window.runtime.EventsOn("notice", (text) => toast(trGo(text)));
   window.addEventListener("resize", moveTabMark);
   document.addEventListener("visibilitychange", () => {
@@ -1098,10 +1294,11 @@ function bind() {
   });
   window.runtime.EventsOn("ping", (p) => {
     pings[p.id] = p.ms;
-    const cell = document.querySelector(`#server-list .row[data-id="${p.id}"] .ping`);
+    const rowSelector = `#server-list .row[data-id="${CSS.escape(p.id)}"]`;
+    const cell = document.querySelector(rowSelector + " .ping");
     if (cell) {
       cell.outerHTML = pingCell(p.id);
-      document.querySelector(`#server-list .row[data-id="${p.id}"] .ping`)?.classList.add("fresh");
+      document.querySelector(rowSelector + " .ping")?.classList.add("fresh");
     }
   });
   window.runtime.EventsOn("update", (u) => {
@@ -1162,6 +1359,7 @@ async function init() {
   render();
   renderUpdate();
   welcome();
+  if (await api().ConfigRecovered()) toast(t("backup.recovered"), true);
 }
 
 // First run: offer a free VPN from the Telegram bot, once.

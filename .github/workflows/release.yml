@@ -19,6 +19,9 @@ env:
   VERSION: ${{ inputs.version || github.ref_name }}
 
 jobs:
+  ui:
+    uses: ./.github/workflows/ui.yml
+
   version:
     runs-on: ubuntu-latest
     steps:
@@ -243,7 +246,7 @@ jobs:
           path: dist/*
 
   publish:
-    needs: [windows, macos, linux, android]
+    needs: [ui, windows, macos, linux, android]
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     permissions:

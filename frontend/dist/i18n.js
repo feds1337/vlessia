@@ -9,6 +9,22 @@
 
 const I18N = {
   ru: {
+    "rules.add": "Добавить правило…",
+    "rules.kind": "Тип",
+    "rules.site": "Сайт / IP / подсеть",
+    "rules.app": "Приложение / путь",
+    "rules.value": "Значение",
+    "rules.route": "Маршрут",
+    "rules.priority": "Приложения важнее сайтов. При совпадении «Через VPN» важнее «Напрямую».",
+    "rules.conflict": "Чтобы изменить маршрут существующего правила, удалите его из прежнего списка.",
+    "backup.recovered": "Повреждённые настройки восстановлены из автоматической копии. Проверьте последние изменения.",
+    "diag.help.dns": "Проверьте интернет и адрес сервера. Попробуйте другую сеть.",
+    "diag.help.server": "Проверьте адрес и порт сервера или выберите другой сервер.",
+    "diag.help.local_proxy": "Переподключитесь к VPN. Проверьте, свободен ли порт HTTP в настройках.",
+    "diag.help.https": "Сервер не пропускает HTTPS. Обновите подписку или выберите другой сервер.",
+    "diag.help.proxy": "Включите системный прокси повторно или переключитесь в режим «Весь трафик».",
+    "diag.help.tun": "Переподключитесь и разрешите создание VPN-адаптера.",
+
     "tab.traffic": "Трафик",
     "traffic.week": "7 дней",
     "traffic.month": "30 дней",
@@ -279,6 +295,22 @@ const I18N = {
   },
 
   en: {
+    "rules.add": "Add rule…",
+    "rules.kind": "Type",
+    "rules.site": "Site / IP / subnet",
+    "rules.app": "Application / path",
+    "rules.value": "Value",
+    "rules.route": "Route",
+    "rules.priority": "Application rules take priority over sites. VPN takes priority over Direct when both match.",
+    "rules.conflict": "To change an existing rule’s route, remove it from the previous list.",
+    "backup.recovered": "Damaged settings were restored from an automatic backup. Check your latest changes.",
+    "diag.help.dns": "Check your internet connection and server address. Try another network.",
+    "diag.help.server": "Check the server address and port, or choose another server.",
+    "diag.help.local_proxy": "Reconnect to the VPN. Check that the HTTP port in Settings is available.",
+    "diag.help.https": "The server cannot pass HTTPS. Refresh your subscription or choose another server.",
+    "diag.help.proxy": "Enable the system proxy again or switch to full tunnel mode.",
+    "diag.help.tun": "Reconnect and allow creation of the VPN adapter.",
+
     "tab.traffic": "Traffic",
     "traffic.week": "7 days",
     "traffic.month": "30 days",
@@ -553,6 +585,10 @@ const I18N = {
 const GO_EXACT = {
   ru: {},
   en: {
+    "правило должно содержать одно непустое значение": "Enter a single non-empty rule",
+    "пустое правило": "Empty rule",
+    "укажите имя приложения или путь без маски": "Enter an application name or path without wildcards",
+    "неизвестный тип правила": "Unknown rule type",
     "картинка слишком большая": "The image is too large",
     "неверная ссылка на сервер": "Invalid server link",
     "в подписке нет рабочих ссылок": "The subscription has no working links",

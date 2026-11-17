@@ -3,3 +3,7 @@ build/windows/installer/tmp/
 frontend/wailsjs/
 wintun.dll
 !internal/tun/wintun.dll
+
+node_modules/
+test-results/
+playwright-report/

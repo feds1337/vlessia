@@ -924,3 +924,9 @@ func (a *client) remind(text string) {
 	a.notice(text)
 	a.host.Notify("Vlessia", text)
 }
+
+func (a *client) ConfigRecovered() bool { return a.store.Recovered() }
+
+func (a *client) ValidateRule(kind, value string) (string, error) {
+	return core.ValidateRule(kind, value)
+}

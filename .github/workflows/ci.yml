@@ -10,6 +10,9 @@ permissions:
   contents: read
 
 jobs:
+  ui:
+    uses: ./.github/workflows/ui.yml
+
   build:
     strategy:
       fail-fast: false

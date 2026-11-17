@@ -5,10 +5,12 @@ package store
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
 	"sync"
+	"time"
 
 	"github.com/feds1337/vlessia/internal/profile"
 	"github.com/feds1337/vlessia/internal/sysproxy"
@@ -136,9 +138,10 @@ type Data struct {
 }
 
 type Store struct {
-	mu   sync.Mutex
-	dir  string
-	data Data
+	mu        sync.Mutex
+	dir       string
+	data      Data
+	recovered bool
 }
 
 func DefaultSettings() Settings {
@@ -171,13 +174,36 @@ func Open() (*Store, error) {
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return nil, err
 	}
+	var invalid error
 	if err == nil {
-		if err := json.Unmarshal(b, &s.data); err != nil {
-			return nil, err
-		}
-		s.data.Servers = slices.DeleteFunc(s.data.Servers, func(p *profile.Server) bool { return p == nil })
-		s.data.Subscriptions = slices.DeleteFunc(s.data.Subscriptions, func(p *Subscription) bool { return p == nil })
+		invalid = decodeData(b, &s.data)
 	}
+	if invalid != nil || errors.Is(err, os.ErrNotExist) {
+		saved, backupErr := os.ReadFile(s.file() + ".bak")
+		if backupErr == nil {
+			recovered := Data{Settings: DefaultSettings()}
+			if backupErr = decodeData(saved, &recovered); backupErr == nil {
+				if invalid != nil {
+					damaged := s.file() + ".corrupt-" + time.Now().UTC().Format("20060102T150405.000000000")
+					if err := atomicWrite(damaged, b); err != nil {
+						return nil, err
+					}
+				}
+				if err := atomicWrite(s.file(), saved); err != nil {
+					return nil, err
+				}
+				s.data, s.recovered = recovered, true
+			}
+		}
+		if invalid != nil && !s.recovered {
+			return nil, fmt.Errorf("config: %w; backup: %v", invalid, backupErr)
+		}
+		if invalid == nil && backupErr != nil && !errors.Is(backupErr, os.ErrNotExist) {
+			return nil, backupErr
+		}
+	}
+	s.data.Servers = slices.DeleteFunc(s.data.Servers, func(p *profile.Server) bool { return p == nil })
+	s.data.Subscriptions = slices.DeleteFunc(s.data.Subscriptions, func(p *Subscription) bool { return p == nil })
 	d := DefaultSettings()
 	st := &s.data.Settings
 	if st.Mode == "" {
@@ -225,19 +251,25 @@ func (s *Store) Edit(fn func(d *Data) error) error {
 	if err != nil {
 		return err
 	}
-	f, err := os.CreateTemp(s.dir, "config-*.tmp")
-	if err != nil {
-		return err
+	// Keep the previous valid configuration before replacing the current one.
+	previous, readErr := os.ReadFile(s.file())
+	if readErr != nil && !errors.Is(readErr, os.ErrNotExist) {
+		return readErr
 	}
-	defer os.Remove(f.Name())
-	_, err = f.Write(b)
-	if closeErr := f.Close(); err == nil {
-		err = closeErr
+	if readErr == nil {
+		var check Data
+		if err := decodeData(previous, &check); err != nil {
+			return err
+		}
+		if err := atomicWrite(s.file()+".bak", previous); err != nil {
+			return err
+		}
+	} else {
+		if err := atomicWrite(s.file()+".bak", b); err != nil {
+			return err
+		}
 	}
-	if err != nil {
-		return err
-	}
-	if err := os.Rename(f.Name(), s.file()); err != nil {
+	if err := atomicWrite(s.file(), b); err != nil {
 		return err
 	}
 	s.data = next
@@ -302,4 +334,41 @@ func migrateLegacyDir(old, dir string) {
 	if os.MkdirAll(dir, 0o755) == nil {
 		_ = os.WriteFile(filepath.Join(dir, "config.json"), b, 0o600)
 	}
+}
+
+// Recovered reports automatic restoration at startup. It is immutable after Open.
+func (s *Store) Recovered() bool { return s.recovered }
+
+func decodeData(b []byte, d *Data) error {
+	if len(b) == 0 || string(b) == "null" {
+		return errors.New("empty configuration")
+	}
+	var object map[string]json.RawMessage
+	if err := json.Unmarshal(b, &object); err != nil {
+		return err
+	}
+	if object == nil {
+		return errors.New("empty configuration")
+	}
+	return json.Unmarshal(b, d)
+}
+
+// atomicWrite never exposes a partially written configuration or backup.
+func atomicWrite(path string, b []byte) error {
+	f, err := os.CreateTemp(filepath.Dir(path), "config-*.tmp")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(f.Name())
+	_, err = f.Write(b)
+	if err == nil {
+		err = f.Sync()
+	}
+	if closeErr := f.Close(); err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		return err
+	}
+	return os.Rename(f.Name(), path)
 }

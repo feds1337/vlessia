@@ -511,6 +511,12 @@ function renderDiagnostic() {
     const li = document.createElement("li");
     li.textContent = t("diag." + step.check) + " — " + t("diag." + step.result);
     if (step.result === "ok" && step.ms > 0) li.textContent += " · " + t("diag.ms", step.ms);
+    if (step.result === "failed") {
+      const hint = document.createElement("p");
+      hint.className = "hint";
+      hint.textContent = t("diag.help." + step.check);
+      li.appendChild(hint);
+    }
     return li;
   }));
 }
@@ -1010,6 +1016,39 @@ function syncSelect(sel) {
 }
 
 function bind() {
+  $("#rule-builder-open").addEventListener("click", () => {
+    $("#rule-error").textContent = "";
+    $("#rule-value").value = "";
+    $("#rule-kind").value = "site";
+    $('#rule-kind option[value="app"]').disabled = platform === "android";
+    $("#rule-builder").showModal();
+    $("#rule-value").focus();
+  });
+  $("#rule-cancel").addEventListener("click", () => $("#rule-builder").close());
+  $("#rule-builder-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const btn = $("#rule-save");
+    if (btn.disabled) return;
+    btn.disabled = true;
+    $("#rule-error").textContent = "";
+    try {
+      const kind = $("#rule-kind").value;
+      const value = await api().ValidateRule(kind, $("#rule-value").value);
+      const settings = readSettings();
+      const suffix = kind === "app" ? "Apps" : "Rules";
+      const key = $("#rule-route").value + suffix;
+      const other = ($("#rule-route").value === "proxy" ? "direct" : "proxy") + suffix;
+      if (settings[other].some((r) => r.trim().toLowerCase() === value.toLowerCase())) throw new Error(t("rules.conflict"));
+      settings[key] = [...new Set([...settings[key].filter((r) => r.trim()), value])];
+      await api().SaveSettings(settings);
+      state.settings = settings;
+      fillSettings();
+      $("#rule-builder").close();
+      toast(t("toast.saved"));
+    } catch (err) {
+      $("#rule-error").textContent = trGo(String(err?.message ?? err));
+    } finally { btn.disabled = false; }
+  });
   $$("#settings-form select").forEach(enhanceSelect);
   $$("details.more").forEach(animateDetails);
   $$(".tab").forEach((b) => b.addEventListener("click", () => showView(b.dataset.view)));
@@ -1320,6 +1359,7 @@ async function init() {
   render();
   renderUpdate();
   welcome();
+  if (await api().ConfigRecovered()) toast(t("backup.recovered"), true);
 }
 
 // First run: offer a free VPN from the Telegram bot, once.

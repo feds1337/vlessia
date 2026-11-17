@@ -1063,3 +1063,7 @@ func (a *App) remind(text string) {
 		_ = runtime.SendNotification(a.ctx, runtime.NotificationOptions{Title: "Vlessia", Body: text})
 	}
 }
+
+func (a *App) ConfigRecovered() bool { return a.store.Recovered() }
+
+func (a *App) ValidateRule(kind, value string) (string, error) { return core.ValidateRule(kind, value) }

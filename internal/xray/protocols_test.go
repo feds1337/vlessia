@@ -183,7 +183,8 @@ func TestProxyEndToEnd(t *testing.T) {
 	if os.Getenv("E2E") == "" {
 		t.Skip("set E2E=1")
 	}
-	server, err := Start([]byte(`{
+	fixture, tlsConfig := httpsFixture(t)
+	server, err := Start(fixtureOutbound(t, []byte(`{
 		"log": {"loglevel": "warning"},
 		"inbounds": [
 			{"listen": "127.0.0.1", "port": 24501, "protocol": "socks",
@@ -192,7 +193,7 @@ func TestProxyEndToEnd(t *testing.T) {
 			 "settings": {"accounts": [{"user": "bob", "pass": "pw"}]}}
 		],
 		"outbounds": [{"protocol": "freedom"}]
-	}`))
+	}`), fixture))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -217,12 +218,13 @@ func TestProxyEndToEnd(t *testing.T) {
 			t.Fatal(err)
 		}
 		proxy, _ := url.Parse(fmt.Sprintf("http://127.0.0.1:%d", port+1))
-		hc := &http.Client{Transport: &http.Transport{Proxy: http.ProxyURL(proxy)}, Timeout: 10 * time.Second}
-		resp, err := hc.Get("https://www.gstatic.com/generate_204")
+		hc := &http.Client{Transport: &http.Transport{Proxy: http.ProxyURL(proxy), TLSClientConfig: tlsConfig}, Timeout: 10 * time.Second}
+		resp, err := hc.Get("https://vpn-fixture.invalid/")
 		ok := err == nil && resp.StatusCode == http.StatusNoContent
 		if resp != nil {
 			resp.Body.Close()
 		}
+		hc.CloseIdleConnections()
 		client.Close()
 		if ok != c.ok {
 			t.Fatalf("%s: works=%v, want %v (err %v)", s.Name, ok, c.ok, err)

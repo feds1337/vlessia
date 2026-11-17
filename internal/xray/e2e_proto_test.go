@@ -67,11 +67,12 @@ func selfSigned(t *testing.T) (certPEM, keyPEM string) {
 
 // TestHysteriaEndToEnd: Hysteria 2 server with a self-signed certificate
 // and salamander obfuscation; the client link says insecure=1, so the
-// certificate is pinned via a probe first. Needs internet; E2E=1.
+// certificate is pinned via a probe first. Uses a local HTTPS fixture; E2E=1.
 func TestHysteriaEndToEnd(t *testing.T) {
 	if os.Getenv("E2E") == "" {
 		t.Skip("set E2E=1")
 	}
+	fixture, tlsConfig := httpsFixture(t)
 	certPEM, keyPEM := selfSigned(t)
 	lines := func(s string) []string { return strings.Split(strings.TrimSpace(s), "\n") }
 	serverCfg, _ := json.Marshal(map[string]any{
@@ -91,7 +92,7 @@ func TestHysteriaEndToEnd(t *testing.T) {
 		}},
 		"outbounds": []any{map[string]any{"protocol": "freedom"}},
 	})
-	server, err := Start(serverCfg)
+	server, err := Start(fixtureOutbound(t, serverCfg, fixture))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -109,10 +110,15 @@ func TestHysteriaEndToEnd(t *testing.T) {
 		t.Fatal(err)
 	}
 	proxy, _ := url.Parse("http://127.0.0.1:21181")
-	hc := &http.Client{Transport: &http.Transport{Proxy: http.ProxyURL(proxy)}, Timeout: 8 * time.Second}
-	if resp, err := hc.Get("https://www.gstatic.com/generate_204"); err == nil && resp.StatusCode == http.StatusNoContent {
+	hc := &http.Client{Transport: &http.Transport{Proxy: http.ProxyURL(proxy), TLSClientConfig: tlsConfig}, Timeout: 8 * time.Second}
+	resp, requestErr := hc.Get("https://vpn-fixture.invalid/")
+	if resp != nil {
+		resp.Body.Close()
+	}
+	if requestErr == nil && resp.StatusCode == http.StatusNoContent {
 		t.Fatal("connected without a pinned certificate")
 	}
+	hc.CloseIdleConnections()
 	bad.Close()
 
 	res, err := hysteria.Probe(context.Background(), s, "127.0.0.1", nil)
@@ -128,8 +134,14 @@ func TestHysteriaEndToEnd(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer client.Close()
-	if code, _ := httpVia(t, 21181, "https://www.gstatic.com/generate_204"); code != http.StatusNoContent {
-		t.Fatalf("status %d", code)
+	resp, err = hc.Get("https://vpn-fixture.invalid/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	hc.CloseIdleConnections()
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("status %d", resp.StatusCode)
 	}
 	up, down := client.Traffic()
 	t.Logf("ok, up=%d down=%d", up, down)

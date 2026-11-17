@@ -587,6 +587,11 @@ const GO_EXACT = {
   en: {
     "правило должно содержать одно непустое значение": "Enter a single non-empty rule",
     "пустое правило": "Empty rule",
+    "неверная подсеть": "Invalid subnet",
+    "неверный URL": "Invalid URL",
+    "неверное регулярное выражение": "Invalid regular expression",
+    "пустое значение": "Empty value",
+    "это не домен, IP или подсеть": "Expected a domain, IP or subnet",
     "укажите имя приложения или путь без маски": "Enter an application name or path without wildcards",
     "неизвестный тип правила": "Unknown rule type",
     "картинка слишком большая": "The image is too large",
@@ -631,6 +636,7 @@ const GO_EXACT = {
 const GO_TEMPLATES = {
   ru: [],
   en: [
+    [/^правило "(.*)": (.+)$/, "Rule “{1}”: {2}"],
     [/^загрузка подписки: (.+)$/, "Loading the subscription: {1}"],
     [/^в подписке нет рабочих ссылок: (.+)$/, "No working links in the subscription: {1}"],
     [/^не удалось найти IP сервера (.+): (.+)$/, "Cannot resolve the server IP {1}: {2}"],

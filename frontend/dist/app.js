@@ -68,6 +68,28 @@ const BOT_URL = "https://t.me/v4hood_bot";
 
 const isFullTunnel = (s) => !!(s?.wg || s?.ovpn);
 
+// Window commands use the Wails runtime. Quit follows OnBeforeClose, so
+// closing the custom frame keeps the existing hide-to-tray/Dock behavior.
+let windowMaximised = false;
+function renderWindowControls() {
+  const button = $("#window-maximise");
+  const label = t(windowMaximised ? "window.restore" : "window.maximise");
+  button.title = label;
+  button.setAttribute("aria-label", label);
+  document.documentElement.classList.toggle("window-maximised", windowMaximised);
+}
+async function syncWindowControls() {
+  if (platform === "android" || !window.runtime?.WindowIsMaximised) return;
+  try {
+    windowMaximised = await window.runtime.WindowIsMaximised();
+    renderWindowControls();
+  } catch { /* A window may be closing. */ }
+}
+function toggleWindowMaximise() {
+  window.runtime.WindowToggleMaximise();
+  setTimeout(syncWindowControls, 100);
+}
+
 // ---------- servers ----------
 
 const PROTO = {
@@ -130,21 +152,25 @@ function renderServers() {
     return;
   }
   const q = $("#search").value.trim().toLowerCase();
-  const servers = state.servers.filter((s) => !q || s.name.toLowerCase().includes(q) || s.address.toLowerCase().includes(q));
+  const servers = !q ? state.servers : state.servers.filter((s) => s.name.toLowerCase().includes(q) || s.address.toLowerCase().includes(q));
 
+  const subscriptions = new Map(state.subscriptions.map(sub => [sub.id, sub]));
+  const serversById = state.servers.some(server => server.via)
+    ? new Map(state.servers.map(server => [server.id, server]))
+    : null;
   let html = q ? "" : autoRow();
   let lastGroup = null;
   for (const s of servers) {
     const group = s.subId || "";
     if (group !== lastGroup) {
-      const sub = state.subscriptions.find((x) => x.id === s.subId);
+      const sub = subscriptions.get(s.subId);
       const sum = subSummary(sub);
       html += s.subId
         ? `<div class="group"><span title="${esc(subTitle(sub))}">${esc(subTitle(sub))}</span>${sum ? `<small>${esc(sum)}</small>` : ""}</div>`
         : `<div class="group"><span>${esc(t("servers.manual"))}</span></div>`;
       lastGroup = group;
     }
-    const relay = s.via ? state.servers.find((x) => x.id === s.via) : null;
+    const relay = serversById?.get(s.via);
     html += `
       <div class="row ${s.id === state.selected ? (state.settings.autoBest ? "picked" : "selected") : ""}" data-id="${esc(s.id)}" tabindex="0">
         <div class="row-main">
@@ -337,6 +363,11 @@ function kick() {
 function frame(now) {
   live.raf = 0;
   if (document.hidden) return;
+  // Limit SVG path construction even on high-refresh-rate monitors.
+  if (!still() && now - live.last < 1000 / 30 - 1) {
+    kick();
+    return;
+  }
   const dt = Math.min(0.1, Math.max(0, (now - (live.last || now)) / 1000));
   live.last = now;
   const k = still() ? 1 : 1 - Math.exp(-dt / 0.22);
@@ -346,8 +377,11 @@ function frame(now) {
     live.shown[key] = Math.abs(d) < 1 ? live.target[key] : live.shown[key] + d * k;
     moving ||= live.shown[key] !== live.target[key];
   }
-  $("#up").textContent = fmtSpeed(Math.round(live.shown.up));
-  $("#down").textContent = fmtSpeed(Math.round(live.shown.down));
+  for (const key of ["up", "down"]) {
+    const meter = $("#" + key);
+    const speed = fmtSpeed(Math.round(live.shown[key]));
+    if (meter.textContent !== speed) meter.textContent = speed;
+  }
   const on = drawGraph(now, dt);
   // Keep animating while the curve slides or the numbers roll.
   if (!still() && (on || moving)) kick();
@@ -382,19 +416,19 @@ function curve(pts) {
   return path;
 }
 
-// drawGraph draws the download curve; returns whether it is on screen.
+// Draw the download curve and request another frame while it is changing.
 function drawGraph(now, dt) {
   const g = $("#graph");
-  const vals = liveCurve(now);
-  const on = vals.length > 1 && state?.status.state === "connected";
+  const on = live.to.length > 1 && state?.status.state === "connected";
   g.classList.toggle("live", on);
-  if (vals.length < 2) {
+  if (!on) {
     $("#graph-area").removeAttribute("d");
     $("#graph-down").removeAttribute("d");
     return false;
   }
   // The scale follows the visible peak: never below it (the curve stays
   // inside the dock), gently back down when the speed drops.
+  const vals = liveCurve(now);
   const top = Math.max(64 * 1024, ...vals);
   const peak = top * 1.08;
   live.scale = !live.scale || still() ? peak : live.scale + (peak - live.scale) * (1 - Math.exp(-dt / (peak > live.scale ? 0.15 : 1.2)));
@@ -409,7 +443,7 @@ function drawGraph(now, dt) {
   const line = curve(pts);
   $("#graph-down").setAttribute("d", line);
   $("#graph-area").setAttribute("d", `${line}L${pts[n - 1][0].toFixed(2)} 101L${pts[0][0].toFixed(2)} 101Z`);
-  return on;
+  return phase < 1 || Math.abs(peak - live.scale) > 1;
 }
 
 function renderTotals() {
@@ -899,6 +933,7 @@ function render() {
 
 // applyLanguage re-renders everything after a switch of the UI language.
 function applyLanguage() {
+  renderWindowControls();
   api().SetLang(lang).catch(() => {});
   applyLang();
   applyPlatform();
@@ -1016,6 +1051,12 @@ function syncSelect(sel) {
 }
 
 function bind() {
+  $("#window-minimise").addEventListener("click", () => window.runtime.WindowMinimise());
+  $("#window-maximise").addEventListener("click", toggleWindowMaximise);
+  $("#window-close").addEventListener("click", () => window.runtime.Quit());
+  $("#titlebar-drag").addEventListener("dblclick", toggleWindowMaximise);
+  window.addEventListener("resize", syncWindowControls);
+  window.addEventListener("focus", syncWindowControls);
   $("#rule-builder-open").addEventListener("click", () => {
     $("#rule-error").textContent = "";
     $("#rule-value").value = "";
@@ -1310,6 +1351,10 @@ function bind() {
 
 // Wording that differs by operating system.
 function applyPlatform() {
+  document.documentElement.classList.toggle("desktop-chrome", platform !== "android");
+  document.documentElement.classList.toggle("android", platform === "android");
+  renderWindowControls();
+  syncWindowControls();
   if (platform === "android") return applyAndroid();
   if (platform === "windows") return;
   const tunOption = $('#settings-form select[name="mode"] option[value="tun"]');

@@ -73,6 +73,7 @@ func main() {
 
 	opts := &options.App{
 		Title:            "Vlessia",
+		Frameless:        true,
 		Width:            960,
 		Height:           640,
 		MinWidth:         760,

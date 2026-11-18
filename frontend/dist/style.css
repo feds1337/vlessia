@@ -987,3 +987,54 @@ html.android #notes-dialog {
   max-height: calc(100vh - var(--inset-top, 0px) - var(--inset-bottom, 0px) - 12px);
   max-height: calc(100dvh - var(--inset-top, 0px) - var(--inset-bottom, 0px) - 12px);
 }
+
+/* Custom desktop chrome shares the application's live theme and accent. */
+.titlebar { display: none; }
+html.desktop-chrome body { padding-top: 44px; }
+html.desktop-chrome .titlebar {
+  display: flex;
+  position: fixed;
+  inset: 0 0 auto;
+  height: 44px;
+  z-index: 10;
+  background: var(--paper);
+  border-bottom: 1px solid var(--line);
+}
+.titlebar-drag {
+  --wails-draggable: drag;
+  display: flex;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+  padding-left: 20px;
+}
+.titlebar-brand { display: flex; align-items: center; gap: 9px; font-size: 13px; font-weight: 650; letter-spacing: -.02em; pointer-events: none; }
+.titlebar-brand svg { width: 18px; height: 20px; fill: var(--lagoon); }
+.titlebar-brand .cut { fill: var(--paper); }
+.window-controls { --wails-draggable: no-drag; display: flex; flex-shrink: 0; }
+.window-control {
+  --wails-draggable: no-drag;
+  display: grid;
+  place-items: center;
+  width: 46px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--muted);
+  cursor: default;
+}
+.window-control svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1; pointer-events: none; }
+.window-control:hover { background: var(--hover); color: var(--ink); }
+.window-control:active { background: var(--line); }
+.window-control:focus-visible { outline-offset: -4px; }
+.window-close:hover { background: #c42b1c; color: #fff; }
+.window-close:active { background: #a82519; color: #fff; }
+.window-control .restore-icon { display: none; }
+.window-maximised .window-control .restore-icon { display: block; }
+.window-maximised .window-control .maximise-icon { display: none; }
+html.desktop-chrome .dock .brand { display: none; }
+html.desktop-chrome .status { margin-top: 26px; }
+@media (max-height: 620px) {
+  html.desktop-chrome .status { margin-top: 16px; }
+}

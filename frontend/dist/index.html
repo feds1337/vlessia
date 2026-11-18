@@ -8,6 +8,19 @@
   <script src="theme.js"></script>
 </head>
 <body>
+  <header class="titlebar" id="titlebar">
+    <div class="titlebar-drag" id="titlebar-drag">
+      <div class="titlebar-brand">
+        <svg viewBox="0 0 32 32" aria-hidden="true"><path d="M3 2h26v13c0 8-7 12-13 15C10 27 3 23 3 15z"/><circle cx="16" cy="13" r="3.5" class="cut"/><rect x="14.4" y="13" width="3.2" height="9" class="cut"/></svg>
+        <span>Vlessia</span>
+      </div>
+    </div>
+    <div class="window-controls" role="group" data-i18n-aria="window.controls" aria-label="Управление окном">
+      <button type="button" id="window-minimise" class="window-control" data-i18n-aria="window.minimise" data-i18n-title="window.minimise" aria-label="Свернуть" title="Свернуть"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8.5h10"/></svg></button>
+      <button type="button" id="window-maximise" class="window-control" aria-label="Развернуть" title="Развернуть"><svg class="maximise-icon" viewBox="0 0 16 16" aria-hidden="true"><rect x="3.5" y="3.5" width="9" height="9" rx=".5"/></svg><svg class="restore-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M5.5 5.5v-2h7v7h-2"/><rect x="3.5" y="5.5" width="7" height="7" rx=".5"/></svg></button>
+      <button type="button" id="window-close" class="window-control window-close" data-i18n-aria="window.close" data-i18n-title="window.close" aria-label="Закрыть окно" title="Закрыть окно"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 4 8 8M12 4l-8 8"/></svg></button>
+    </div>
+  </header>
   <aside class="dock" id="dock" data-state="disconnected">
     <!-- Download speed of the last minute and a half, behind the whole column. -->
     <svg class="dock-graph" id="graph" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">

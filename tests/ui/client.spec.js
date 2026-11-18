@@ -7,7 +7,15 @@ async function boot(page, options = {}) {
   page.on('pageerror', e => errors.push(e.message));
   await page.addInitScript(({ platform, recovered }) => {
     const listeners = {};
-    window.runtime = { EventsOn: (name, fn) => (listeners[name] ||= []).push(fn) };
+    window.windowCalls = [];
+    window.windowMaximised = false;
+    window.runtime = {
+      EventsOn: (name, fn) => (listeners[name] ||= []).push(fn),
+      WindowMinimise: () => window.windowCalls.push('minimise'),
+      WindowToggleMaximise: () => { window.windowMaximised = !window.windowMaximised; window.windowCalls.push('maximise'); },
+      WindowIsMaximised: async () => window.windowMaximised,
+      Quit: () => window.windowCalls.push('close'),
+    };
     const emit = () => (listeners.state || []).forEach(fn => fn(structuredClone(data)));
     const data = {
       servers: [], subscriptions: [], selected: '',
@@ -18,7 +26,7 @@ async function boot(page, options = {}) {
     window.testCalls = [];
     const methods = {
       GetState: () => structuredClone(data), GetPlatform: () => platform,
-      GetVersion: () => 'v0.7.1', GetUpdate: () => ({ state: 'idle', current: 'v0.7.1' }),
+      GetVersion: () => 'v0.8.0', GetUpdate: () => ({ state: 'idle', current: 'v0.8.0' }),
       GetTraffic: () => ({ history: [] }), GetAutostart: () => ({}),
       WelcomePending: () => false, ConfigRecovered: () => recovered,
       GetTrafficHistory: () => ({ days: [], connections: [] }),
@@ -122,4 +130,56 @@ test('Android recovery notice and site rules', async ({ page }) => {
   await page.locator('#rule-save').click();
   await expect(page.locator('textarea[name="proxyRules"]')).toHaveValue('example.org');
   expect(errors).toEqual([]);
+});
+
+
+test('custom title bar follows theme and dispatches native window commands', async ({ page }) => {
+  const errors = await boot(page);
+  await expect(page.locator('#titlebar')).toBeVisible();
+  await expect(page.locator('.titlebar-brand')).toHaveText('Vlessia');
+  await expect(page.locator('.dock .brand')).not.toBeVisible();
+  await page.locator('#window-maximise').click();
+  await expect(page.locator('#window-maximise')).toHaveAccessibleName('Восстановить размер');
+  await page.locator('#titlebar-drag').dblclick();
+  await expect(page.locator('#window-maximise')).toHaveAccessibleName('Развернуть');
+  await page.locator('#window-minimise').click();
+  await page.locator('#window-close').click();
+  expect(await page.evaluate(() => window.windowCalls)).toEqual(['maximise', 'maximise', 'minimise', 'close']);
+  await page.evaluate(() => applyLook('dark', 'violet'));
+  const dark = await page.locator('#titlebar').evaluate(el => getComputedStyle(el).backgroundColor);
+  await page.evaluate(() => applyLook('light', 'violet'));
+  const light = await page.locator('#titlebar').evaluate(el => getComputedStyle(el).backgroundColor);
+  expect(dark).not.toEqual(light);
+  expect(await page.locator('#titlebar-drag').evaluate(el => getComputedStyle(el).getPropertyValue('--wails-draggable').trim())).toBe('drag');
+  expect(await page.locator('#window-close').evaluate(el => getComputedStyle(el).getPropertyValue('--wails-draggable').trim())).toBe('no-drag');
+  expect(errors).toEqual([]);
+});
+
+test('desktop title bar stays off Android', async ({ page }) => {
+  await boot(page, { platform: 'android' });
+  await expect(page.locator('#titlebar')).not.toBeVisible();
+  await expect(page.locator('.dock .brand')).toBeVisible();
+});
+
+test('title bar layout stays above the content in both themes', async ({ page }, testInfo) => {
+  await page.setViewportSize({width: 1060, height: 700});
+  await boot(page);
+  await page.evaluate(async () => {
+    testData.servers = [
+      {id:'s',name:'Нидерланды · Амстердам',protocol:'vless',network:'tcp',security:'reality',address:'nl.example.com',port:443},
+      {id:'de',name:'Германия · Франкфурт',protocol:'vless',network:'tcp',security:'reality',address:'de.example.com',port:443},
+      {id:'fi',name:'Финляндия · Хельсинки',protocol:'trojan',network:'tcp',security:'tls',address:'fi.example.com',port:443}
+    ];
+    testData.selected = 's';
+    await window.go.main.App.Toggle();
+    await window.go.main.App.Toggle();
+    applyLook('dark','');
+    await document.fonts.ready;
+  });
+  const header = await page.locator('#titlebar').boundingBox();
+  const dock = await page.locator('#dock').boundingBox();
+  expect(header.y + header.height).toBe(dock.y);
+  await page.screenshot({path:testInfo.outputPath('titlebar-dark.png')});
+  await page.evaluate(() => applyLook('light',''));
+  await page.screenshot({path:testInfo.outputPath('titlebar-light.png')});
 });

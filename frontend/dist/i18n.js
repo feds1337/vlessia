@@ -9,6 +9,12 @@
 
 const I18N = {
   ru: {
+    "window.controls": "Управление окном",
+    "window.minimise": "Свернуть",
+    "window.maximise": "Развернуть",
+    "window.restore": "Восстановить размер",
+    "window.close": "Закрыть окно",
+
     "rules.add": "Добавить правило…",
     "rules.kind": "Тип",
     "rules.site": "Сайт / IP / подсеть",
@@ -295,6 +301,12 @@ const I18N = {
   },
 
   en: {
+    "window.controls": "Window controls",
+    "window.minimise": "Minimise",
+    "window.maximise": "Maximise",
+    "window.restore": "Restore window",
+    "window.close": "Close window",
+
     "rules.add": "Add rule…",
     "rules.kind": "Type",
     "rules.site": "Site / IP / subnet",

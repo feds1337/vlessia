@@ -68,6 +68,28 @@ const BOT_URL = "https://t.me/v4hood_bot";
 
 const isFullTunnel = (s) => !!(s?.wg || s?.ovpn);
 
+// Window commands use the Wails runtime. Quit follows OnBeforeClose, so
+// closing the custom frame keeps the existing hide-to-tray/Dock behavior.
+let windowMaximised = false;
+function renderWindowControls() {
+  const button = $("#window-maximise");
+  const label = t(windowMaximised ? "window.restore" : "window.maximise");
+  button.title = label;
+  button.setAttribute("aria-label", label);
+  document.documentElement.classList.toggle("window-maximised", windowMaximised);
+}
+async function syncWindowControls() {
+  if (platform === "android" || !window.runtime?.WindowIsMaximised) return;
+  try {
+    windowMaximised = await window.runtime.WindowIsMaximised();
+    renderWindowControls();
+  } catch { /* A window may be closing. */ }
+}
+function toggleWindowMaximise() {
+  window.runtime.WindowToggleMaximise();
+  setTimeout(syncWindowControls, 100);
+}
+
 // ---------- servers ----------
 
 const PROTO = {
@@ -899,6 +921,7 @@ function render() {
 
 // applyLanguage re-renders everything after a switch of the UI language.
 function applyLanguage() {
+  renderWindowControls();
   api().SetLang(lang).catch(() => {});
   applyLang();
   applyPlatform();
@@ -1016,6 +1039,12 @@ function syncSelect(sel) {
 }
 
 function bind() {
+  $("#window-minimise").addEventListener("click", () => window.runtime.WindowMinimise());
+  $("#window-maximise").addEventListener("click", toggleWindowMaximise);
+  $("#window-close").addEventListener("click", () => window.runtime.Quit());
+  $("#titlebar-drag").addEventListener("dblclick", toggleWindowMaximise);
+  window.addEventListener("resize", syncWindowControls);
+  window.addEventListener("focus", syncWindowControls);
   $("#rule-builder-open").addEventListener("click", () => {
     $("#rule-error").textContent = "";
     $("#rule-value").value = "";
@@ -1310,6 +1339,10 @@ function bind() {
 
 // Wording that differs by operating system.
 function applyPlatform() {
+  document.documentElement.classList.toggle("desktop-chrome", platform !== "android");
+  document.documentElement.classList.toggle("android", platform === "android");
+  renderWindowControls();
+  syncWindowControls();
   if (platform === "android") return applyAndroid();
   if (platform === "windows") return;
   const tunOption = $('#settings-form select[name="mode"] option[value="tun"]');

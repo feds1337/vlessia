@@ -26,10 +26,13 @@ async function boot(page, options = {}) {
     window.testCalls = [];
     const methods = {
       GetState: () => structuredClone(data), GetPlatform: () => platform,
-      GetVersion: () => 'v0.8.0', GetUpdate: () => ({ state: 'idle', current: 'v0.8.0' }),
-      GetTraffic: () => ({ history: [] }), GetAutostart: () => ({}),
+      GetVersion: () => 'v0.8.1', GetUpdate: () => ({ state: 'idle', current: 'v0.8.1' }),
+      GetTraffic: () => ({ history: [], sessionUp: 0, sessionDown: 0, todayUp: 0, todayDown: 0 }), GetAutostart: () => ({ admin: true }),
       WelcomePending: () => false, ConfigRecovered: () => recovered,
-      GetTrafficHistory: () => ({ days: [], connections: [] }),
+      GetTrafficHistory: () => {
+        if (window.historyFails) throw new Error('History unavailable');
+        return window.testHistory || { days: [], connections: [] };
+      },
       SetLang: () => {},
       ImportText: text => {
         data.servers = [{ id: 's', name: 'Test server', address: '127.0.0.1', port: 443, protocol: 'vless', network: 'tcp' }];
@@ -92,6 +95,7 @@ test('subscription form and language switch', async ({ page }) => {
 test('rule builder validates errors, preserves existing settings and handles failed saves', async ({ page }) => {
   const errors = await boot(page);
   await settings(page);
+  await page.locator('#settings-tab-rules').click();
   await page.locator('#rule-builder-open').click();
   await page.locator('#rule-value').fill('regexp:[');
   await page.locator('#rule-save').click();
@@ -124,6 +128,7 @@ test('Android recovery notice and site rules', async ({ page }) => {
   const errors = await boot(page, { platform: 'android', recovered: true });
   await expect(page.locator('#toasts')).toContainText('восстановлены');
   await settings(page);
+  await page.locator('#settings-tab-rules').click();
   await page.locator('#rule-builder-open').click();
   await expect(page.locator('#rule-kind option[value="app"]')).toHaveAttribute('disabled', '');
   await page.locator('#rule-value').fill('example.org');
@@ -200,4 +205,97 @@ test('speed graph pauses once settled and resumes on the next sample', async ({ 
     return { animating, settled, resumed, cleared: !document.querySelector('#graph-down').hasAttribute('d') };
   });
   expect(result).toEqual({animating: true, settled: false, resumed: true, cleared: true});
+});
+
+async function seedTraffic(page) {
+  await page.evaluate(() => {
+    const today = new Date();
+    today.setHours(12, 0, 0, 0);
+    const days = Array.from({ length: 30 }, (_, i) => {
+      const date = new Date(today);
+      date.setDate(date.getDate() - 29 + i);
+      const day = [date.getFullYear(), String(date.getMonth() + 1).padStart(2, '0'), String(date.getDate()).padStart(2, '0')].join('-');
+      const mib = 2 ** 20;
+      return { day, up: ((i * 11) % 35 + 9) * mib, down: ((i * 17) % 170 + 35) * mib };
+    });
+    window.testHistory = {
+      days, connections: [
+        { started: today / 1000 - 10 * 86400, server: 'Франкфурт', mode: 'tun' },
+        { started: today / 1000 - 86400, server: 'Хельсинки', mode: 'proxy' },
+        { started: today / 1000, server: 'Амстердам', mode: 'tun' },
+      ],
+    };
+  });
+}
+
+for (const platform of ['windows', 'android']) {
+  test('settings and traffic workspaces on ' + platform, async ({ page }, testInfo) => {
+    const mobile = platform === 'android';
+    await page.setViewportSize(mobile ? { width: 360, height: 740 } : { width: 1060, height: 700 });
+    const errors = await boot(page, { platform });
+    await seedTraffic(page);
+    await settings(page);
+    await expect(page.locator('#settings-tab-general')).toHaveAttribute('aria-selected', 'true');
+    await expect(page.locator('#backup-export')).toBeHidden();
+    await expect(page.locator('#power')).toBeVisible();
+    if (mobile) await expect(page.locator('#test-btn')).toBeHidden();
+    await page.evaluate(() => document.fonts.ready);
+    await page.screenshot({ path: testInfo.outputPath('settings-' + platform + '.png') });
+    for (const id of ['network', 'rules', 'data', 'general']) {
+      await page.locator('#settings-tab-' + id).click();
+      await expect(page.locator('#settings-' + id)).toBeVisible();
+      expect(await page.locator('#settings-form').evaluate(el => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(1);
+    }
+    await page.locator('.tab[data-view="traffic"]').click();
+    await expect(page.locator('#traffic-connections li')).toHaveCount(3);
+    const monthTotal = await page.locator('#traffic-summary').innerText();
+    await page.locator('[data-days="7"]').click();
+    await expect(page.locator('[data-days="7"]')).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.locator('#traffic-summary')).not.toHaveText(monthTotal);
+    await expect(page.locator('#traffic-connections li')).toHaveCount(2);
+    await page.locator('#traffic-detail summary').click();
+    await expect(page.locator('#traffic-days tr')).toHaveCount(7);
+    await page.locator('#traffic-detail summary').click();
+    await page.locator('[data-days="30"]').click();
+    await expect(page.locator('#traffic-summary')).toHaveText(monthTotal);
+    expect(await page.locator('#view-traffic .list').evaluate(el => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(1);
+    await page.screenshot({ path: testInfo.outputPath('traffic-' + platform + '.png') });
+    await page.locator('.tab[data-view="servers"]').click();
+    await expect(page.locator('#test-btn')).toBeVisible();
+    expect(errors).toEqual([]);
+  });
+}
+
+test('traffic history recovers from failure and explains an unused period', async ({ page }) => {
+  const errors = await boot(page);
+  await page.evaluate(() => { window.historyFails = true; });
+  await page.locator('.tab[data-view="traffic"]').click();
+  await expect(page.locator('#traffic-retry')).toBeVisible();
+  await seedTraffic(page);
+  await page.evaluate(() => {
+    window.historyFails = false;
+    window.testHistory.days.forEach(day => { day.up = 0; day.down = 0; });
+    window.testHistory.connections = [];
+  });
+  await page.locator('#traffic-retry').click();
+  await expect(page.locator('#traffic-no-data')).toBeVisible();
+  await expect(page.locator('#traffic-no-connections')).toBeVisible();
+  await expect(page.locator('#traffic-retry')).toBeHidden();
+  expect(errors).toEqual([]);
+});
+
+test('settings autosave confirms edits and restores a failed visual change', async ({ page }) => {
+  await boot(page);
+  await settings(page);
+  await page.locator('input[name="sound"]').check();
+  await expect(page.locator('#settings-save')).toHaveText('Сохранено');
+  expect(await page.evaluate(() => testData.settings.sound)).toBe(true);
+  await page.evaluate(() => { window.rejectSave = true; });
+  await page.locator('input[name="animations"]').click();
+  await expect(page.locator('#settings-save')).toHaveText('Ошибка сохранения');
+  await expect(page.locator('input[name="animations"]')).not.toBeChecked();
+  await expect(page.locator('html')).toHaveClass(/no-anim/);
+  await page.locator('#settings-tab-general').focus();
+  await page.keyboard.press('ArrowRight');
+  await expect(page.locator('#settings-network')).toBeVisible();
 });

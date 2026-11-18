@@ -75,7 +75,7 @@
 
   <main>
     <nav class="tabs" aria-label="Разделы">
-      <button class="tab active" data-view="servers" data-i18n="tab.servers">Серверы</button>
+      <button class="tab active" aria-current="page" data-view="servers" data-i18n="tab.servers">Серверы</button>
       <button class="tab" data-view="subs" data-i18n="tab.subs">Подписки</button>
       <button class="tab" data-view="traffic" data-i18n="tab.traffic">Трафик</button>
       <button class="tab" data-view="settings" data-i18n="tab.settings">Настройки</button>
@@ -116,168 +116,209 @@
     </section>
 
     <section class="view" id="view-traffic">
-      <div class="list">
-        <div class="bar">
-          <button class="btn" data-days="7" aria-pressed="false" data-i18n="traffic.week">7 дней</button>
-          <button class="btn primary" data-days="30" aria-pressed="true" data-i18n="traffic.month">30 дней</button>
+      <div class="list traffic-view">
+        <div class="usage-heading">
+          <h2 data-i18n="traffic.overview">Расход трафика</h2>
+          <div class="usage-period" role="group" aria-label="Период" data-i18n-aria="traffic.period">
+            <button type="button" data-days="7" aria-pressed="false" data-i18n="traffic.week">7 дней</button>
+            <button type="button" data-days="30" aria-pressed="true" data-i18n="traffic.month">30 дней</button>
+          </div>
         </div>
-        <p id="traffic-summary"></p>
-        <div class="traffic-chart" id="traffic-chart" aria-hidden="true"></div>
-        <details>
-          <summary data-i18n="traffic.daily">Трафик по дням</summary>
-          <ul id="traffic-days" class="history-list"></ul>
-        </details>
-        <h3 data-i18n="traffic.connections">Последние подключения</h3>
-        <ul class="history-list" id="traffic-connections"></ul>
+        <div id="traffic-status" class="usage-status">
+          <span id="traffic-message" role="status" data-i18n="traffic.loading">Загрузка истории…</span>
+          <button type="button" class="btn" id="traffic-retry" hidden data-i18n="traffic.retry">Повторить</button>
+        </div>
+        <div id="traffic-content" hidden>
+          <section class="usage-card" aria-labelledby="traffic-total-label">
+            <div class="usage-summary">
+              <div>
+                <h3 id="traffic-total-label" data-i18n="traffic.total">Всего за период</h3>
+                <strong id="traffic-summary"></strong>
+              </div>
+              <dl class="usage-directions">
+                <div><dt class="usage-down" data-i18n="traffic.down">Получено</dt><dd id="traffic-down"></dd></div>
+                <div><dt class="usage-up" data-i18n="traffic.up">Отправлено</dt><dd id="traffic-up"></dd></div>
+              </dl>
+            </div>
+            <div id="traffic-chart" class="traffic-chart" aria-hidden="true"></div>
+            <div class="usage-axis" id="traffic-range"></div>
+            <p id="traffic-no-data" class="usage-empty" hidden data-i18n="traffic.no_data">За этот период трафика нет.</p>
+            <details id="traffic-detail">
+              <summary data-i18n="traffic.daily">Трафик по дням</summary>
+              <table class="usage-days">
+                <thead><tr><th scope="col" data-i18n="traffic.date">Дата</th><th scope="col" data-i18n="traffic.down">Получено</th><th scope="col" data-i18n="traffic.up">Отправлено</th></tr></thead>
+                <tbody id="traffic-days"></tbody>
+              </table>
+            </details>
+          </section>
+          <section class="usage-sessions" aria-labelledby="traffic-sessions-title">
+            <h3 id="traffic-sessions-title" data-i18n="traffic.connections">Последние подключения</h3>
+            <ul id="traffic-connections"></ul>
+            <p id="traffic-no-connections" class="usage-empty" hidden data-i18n="traffic.empty">За этот период подключений нет.</p>
+          </section>
+        </div>
       </div>
     </section>
 
     <section class="view" id="view-settings">
+      <div class="settings-head">
+        <h2 data-i18n="tab.settings">Настройки</h2>
+        <span class="settings-save" id="settings-save" role="status" data-i18n="s.autosave">Автосохранение</span>
+      </div>
+      <div class="settings-nav" role="tablist" data-i18n-aria="s.categories" aria-label="Разделы настроек">
+        <button type="button" role="tab" id="settings-tab-general" aria-controls="settings-general" aria-selected="true" tabindex="0" data-i18n="s.category_general">Основные</button>
+        <button type="button" role="tab" id="settings-tab-network" aria-controls="settings-network" aria-selected="false" tabindex="-1" data-i18n="s.category_network">Сеть</button>
+        <button type="button" role="tab" id="settings-tab-rules" aria-controls="settings-rules" aria-selected="false" tabindex="-1" data-i18n="s.category_rules">Правила</button>
+        <button type="button" role="tab" id="settings-tab-data" aria-controls="settings-data" aria-selected="false" tabindex="-1" data-i18n="s.category_data">Данные</button>
+      </div>
       <form class="settings" id="settings-form">
-        <section>
-          <h3 data-i18n="backup.title">Резервные копии</h3>
-          <p class="muted" data-i18n="backup.warning">Файл содержит ключи, пароли и ссылки на подписки в открытом виде.</p>
-          <div class="bar">
-            <button class="btn" type="button" id="backup-export" data-i18n="backup.export">Сохранить копию</button>
-            <button class="btn" type="button" id="backup-restore" data-i18n="backup.restore">Восстановить</button>
-          </div>
-        </section>
-        <section>
-          <h3 data-i18n="s.connection">Подключение</h3>
-          <label class="row-field">
-            <span data-i18n="s.mode">Режим</span>
-            <select name="mode">
-              <option value="proxy" data-i18n="s.mode_proxy">Прокси — браузеры и большинство программ</option>
-              <option value="tun" data-i18n="s.mode_tun">Весь трафик — нужны права администратора</option>
-            </select>
-          </label>
-          <label class="check"><input type="checkbox" name="bypassRu"> <span data-i18n="s.bypass_ru">Российские сайты (.ru, .su, .рф) открывать напрямую</span></label>
-          <label class="check"><input type="checkbox" name="autoReconnect"> <span data-i18n="s.auto_reconnect">Переподключаться, если VPN перестал работать</span></label>
-          <p class="hint" data-i18n="s.auto_reconnect_hint">Клиент проверяет соединение каждые 20 секунд. Если сервер перестал отвечать, Vlessia переподключится, а если не поможет — перейдёт на самый быстрый сервер той же подписки.</p>
-          <label class="check"><input type="checkbox" name="killSwitch"> <span data-i18n="s.kill_switch">Kill switch: блокировать интернет, когда VPN выключен</span></label>
-          <p class="hint" id="kill-hint"></p>
-          <label class="check"><input type="checkbox" name="balance"> <span data-i18n="s.balance">Балансировка между серверами подписки</span></label>
-          <p class="hint" data-i18n="s.balance_hint">Новые соединения распределяются между серверами одной подписки (round-robin). Не работает для WireGuard, AmneziaWG и OpenVPN.</p>
-          <label class="row-field" id="balance-strategy" hidden>
-            <span data-i18n="s.balance_strategy">Стратегия балансировки</span>
-            <select name="balanceStrategy">
-              <option value="" data-i18n="s.strategy_roundrobin">Поровну — каждое новое соединение на следующий сервер</option>
-              <option value="leastping" data-i18n="s.strategy_leastping">Самый быстрый — по задержке, с проверкой живости</option>
-            </select>
-          </label>
-          <details class="more">
-            <summary data-i18n="s.more">Дополнительно</summary>
-            <div class="more-body">
-              <label class="row-field"><span data-i18n="s.dns">DNS-серверы</span><input class="field-input" name="dns" aria-describedby="dns-hint"></label>
-              <p class="hint" id="dns-hint" data-i18n="s.dns_hint">Через запятую. Первый также назначается адаптеру в режиме «Весь трафик».</p>
-              <div class="pair">
-                <label class="row-field"><span data-i18n="s.socks">Порт SOCKS5</span><input class="field-input" name="socksPort" type="number" min="1" max="65535"></label>
-                <label class="row-field"><span data-i18n="s.http">Порт HTTP</span><input class="field-input" name="httpPort" type="number" min="1" max="65535"></label>
-              </div>
+        <div class="settings-panel" role="tabpanel" id="settings-general" aria-labelledby="settings-tab-general">
+          <section>
+            <h3 data-i18n="s.appearance">Оформление</h3>
+            <div class="settings-selects">
+              <label class="row-field">
+                <span data-i18n="s.language">Язык</span>
+                <select name="lang" id="lang-select">
+                  <option value="ru">Русский</option>
+                  <option value="en">English</option>
+                </select>
+              </label>
+              <label class="row-field">
+                <span data-i18n="s.theme">Тема</span>
+                <select name="theme">
+                  <option value="" data-i18n="theme.system">Как в системе</option>
+                  <option value="light" data-i18n="theme.light">Светлая</option>
+                  <option value="dark" data-i18n="theme.dark">Тёмная</option>
+                </select>
+              </label>
             </div>
-          </details>
-        </section>
-
-        <section>
-          <h3 data-i18n="s.startup">Запуск</h3>
-          <label class="check"><input type="checkbox" id="autostart"> <span data-i18n="s.autostart">Запускать вместе с системой</span></label>
-          <p class="hint" id="autostart-hint"></p>
-          <label class="check"><input type="checkbox" name="autoConnect"> <span data-i18n="s.auto_connect">Подключаться к выбранному серверу при запуске</span></label>
-          <label class="check"><input type="checkbox" name="sound"> <span data-i18n="s.sound">Звук при подключении</span></label>
-        </section>
-
-        <section>
-          <button class="btn" type="button" id="rule-builder-open" data-i18n="rules.add">Добавить правило…</button>
-          <h3 data-i18n="s.rules">Правила для сайтов</h3>
-          <div class="pair">
-            <label class="row-field"><span data-i18n="s.rules_vpn">Всегда через VPN</span><textarea name="proxyRules" rows="4" spellcheck="false" placeholder="youtube.com&#10;instagram.com"></textarea></label>
-            <label class="row-field"><span data-i18n="s.rules_direct">Всегда напрямую</span><textarea name="directRules" rows="4" spellcheck="false" placeholder="gosuslugi.ru&#10;95.163.0.0/16"></textarea></label>
-          </div>
-          <p class="hint" data-i18n="s.rules_hint">По одному на строку: домен (вместе с поддоменами), IP-адрес или подсеть. «Через VPN» важнее «Напрямую» и галочки про российские сайты.</p>
-        </section>
-
-        <section id="apps-section">
-          <h3 data-i18n="s.apps">Правила для приложений</h3>
-          <div class="pair">
-            <label class="row-field"><span data-i18n="s.apps_vpn">Всегда через VPN</span><textarea name="proxyApps" rows="4" spellcheck="false" placeholder="chrome.exe&#10;Telegram.exe"></textarea></label>
-            <label class="row-field"><span data-i18n="s.apps_direct">Всегда напрямую</span><textarea name="directApps" rows="4" spellcheck="false" placeholder="steam.exe&#10;C:/Games/"></textarea></label>
-          </div>
-          <p class="hint" data-i18n="s.apps_hint">По одному на строку: имя процесса (chrome.exe), полный путь или папка с «/» на конце. Приложения важнее правил для сайтов. Работает на Windows, Linux и macOS.</p>
-        </section>
-
-        <section id="android-apps" hidden>
-          <h3 data-i18n="s.apps_android">Приложения через VPN</h3>
-          <label class="row-field">
-            <span data-i18n="s.apps_mode">Какие приложения отправлять через VPN</span>
-            <select name="androidAppsMode">
-              <option value="" data-i18n="s.apps_mode_all">Все приложения</option>
-              <option value="allow" data-i18n="s.apps_mode_allow">Только выбранные</option>
-              <option value="block" data-i18n="s.apps_mode_block">Все, кроме выбранных</option>
-            </select>
-          </label>
-          <div class="inline">
-            <button class="btn ghost" type="button" id="pick-apps" data-i18n="s.apps_pick">Выбрать приложения…</button>
-            <span class="muted" id="apps-count"></span>
-          </div>
-          <p class="hint" data-i18n="s.apps_android_hint">Само приложение Vlessia в туннель не попадает: ему нужен интернет для подписок и обновлений.</p>
-        </section>
-
-        <section>
-          <h3 data-i18n="s.appearance">Оформление</h3>
-          <label class="row-field">
-            <span data-i18n="s.language">Язык</span>
-            <select name="lang" id="lang-select">
-              <option value="ru">Русский</option>
-              <option value="en">English</option>
-            </select>
-          </label>
-          <label class="row-field">
-            <span data-i18n="s.theme">Тема</span>
-            <select name="theme">
-              <option value="" data-i18n="theme.system">Как в системе</option>
-              <option value="light" data-i18n="theme.light">Светлая</option>
-              <option value="dark" data-i18n="theme.dark">Тёмная</option>
-            </select>
-          </label>
-          <fieldset class="swatches">
-            <legend data-i18n="s.accent">Цвет акцента</legend>
-            <label class="swatch" data-accent="lagoon" data-i18n-title="accent.lagoon" title="Лагуна"><input type="radio" name="accent" value="" data-i18n-aria="accent.lagoon" aria-label="Лагуна"><span></span></label>
-            <label class="swatch" data-accent="blue" data-i18n-title="accent.blue" title="Синий"><input type="radio" name="accent" value="blue" data-i18n-aria="accent.blue" aria-label="Синий"><span></span></label>
-            <label class="swatch" data-accent="violet" data-i18n-title="accent.violet" title="Фиолетовый"><input type="radio" name="accent" value="violet" data-i18n-aria="accent.violet" aria-label="Фиолетовый"><span></span></label>
-            <label class="swatch" data-accent="rose" data-i18n-title="accent.rose" title="Розовый"><input type="radio" name="accent" value="rose" data-i18n-aria="accent.rose" aria-label="Розовый"><span></span></label>
-            <label class="swatch" data-accent="orange" data-i18n-title="accent.orange" title="Оранжевый"><input type="radio" name="accent" value="orange" data-i18n-aria="accent.orange" aria-label="Оранжевый"><span></span></label>
-            <label class="swatch" data-accent="green" data-i18n-title="accent.green" title="Зелёный"><input type="radio" name="accent" value="green" data-i18n-aria="accent.green" aria-label="Зелёный"><span></span></label>
-            <label class="swatch" data-accent="graphite" data-i18n-title="accent.graphite" title="Графит"><input type="radio" name="accent" value="graphite" data-i18n-aria="accent.graphite" aria-label="Графит"><span></span></label>
-          </fieldset>
-          <label class="check"><input type="checkbox" name="animations"> <span data-i18n="s.animations">Анимации</span></label>
-        </section>
-
-        <section>
-          <h3 data-i18n="s.updates">Обновления</h3>
-          <label class="check"><input type="checkbox" name="updateCheck"> <span data-i18n="s.update_check">Проверять обновления автоматически</span></label>
-          <div class="inline">
-            <span class="muted" id="version-line"></span>
-            <button class="btn ghost" type="button" id="check-update" data-i18n="s.check_now">Проверить сейчас</button>
-            <button class="btn ghost" type="button" id="settings-notes" data-i18n="dock.whats_new" hidden>Что нового</button>
-          </div>
-        </section>
-
-        <section>
-          <h3 data-i18n="s.log">Журнал</h3>
-          <label class="row-field">
-            <span data-i18n="s.log_level">Подробность журнала Xray</span>
-            <select name="logLevel">
-              <option value="error" data-i18n="log.error">Только ошибки</option>
-              <option value="warning" data-i18n="log.warning">Предупреждения</option>
-              <option value="info" data-i18n="log.info">Подробно</option>
-              <option value="debug" data-i18n="log.debug">Отладка</option>
-              <option value="none" data-i18n="log.none">Не вести</option>
-            </select>
-          </label>
-          <div class="inline">
-            <button class="btn ghost" type="button" id="open-dir" data-i18n="s.open_dir">Открыть папку данных</button>
-          </div>
-        </section>
+            <fieldset class="swatches">
+              <legend data-i18n="s.accent">Цвет акцента</legend>
+              <label class="swatch" data-accent="lagoon" data-i18n-title="accent.lagoon" title="Лагуна"><input type="radio" name="accent" value="" data-i18n-aria="accent.lagoon" aria-label="Лагуна"><span></span></label>
+              <label class="swatch" data-accent="blue" data-i18n-title="accent.blue" title="Синий"><input type="radio" name="accent" value="blue" data-i18n-aria="accent.blue" aria-label="Синий"><span></span></label>
+              <label class="swatch" data-accent="violet" data-i18n-title="accent.violet" title="Фиолетовый"><input type="radio" name="accent" value="violet" data-i18n-aria="accent.violet" aria-label="Фиолетовый"><span></span></label>
+              <label class="swatch" data-accent="rose" data-i18n-title="accent.rose" title="Розовый"><input type="radio" name="accent" value="rose" data-i18n-aria="accent.rose" aria-label="Розовый"><span></span></label>
+              <label class="swatch" data-accent="orange" data-i18n-title="accent.orange" title="Оранжевый"><input type="radio" name="accent" value="orange" data-i18n-aria="accent.orange" aria-label="Оранжевый"><span></span></label>
+              <label class="swatch" data-accent="green" data-i18n-title="accent.green" title="Зелёный"><input type="radio" name="accent" value="green" data-i18n-aria="accent.green" aria-label="Зелёный"><span></span></label>
+              <label class="swatch" data-accent="graphite" data-i18n-title="accent.graphite" title="Графит"><input type="radio" name="accent" value="graphite" data-i18n-aria="accent.graphite" aria-label="Графит"><span></span></label>
+            </fieldset>
+            <label class="check"><input type="checkbox" name="animations"> <span data-i18n="s.animations">Анимации</span></label>
+          </section>
+          <section>
+            <h3 data-i18n="s.startup">Запуск</h3>
+            <label class="check"><input type="checkbox" id="autostart"> <span data-i18n="s.autostart">Запускать вместе с системой</span></label>
+            <p class="hint" id="autostart-hint"></p>
+            <label class="check"><input type="checkbox" name="autoConnect"> <span data-i18n="s.auto_connect">Подключаться к выбранному серверу при запуске</span></label>
+            <label class="check"><input type="checkbox" name="sound"> <span data-i18n="s.sound">Звук при подключении</span></label>
+          </section>
+        </div>
+        <div class="settings-panel" role="tabpanel" id="settings-network" aria-labelledby="settings-tab-network" hidden>
+          <section>
+            <h3 data-i18n="s.connection">Подключение</h3>
+            <label class="row-field">
+              <span data-i18n="s.mode">Режим</span>
+              <select name="mode">
+                <option value="proxy" data-i18n="s.mode_proxy">Прокси — браузеры и большинство программ</option>
+                <option value="tun" data-i18n="s.mode_tun">Весь трафик — нужны права администратора</option>
+              </select>
+            </label>
+            <label class="check"><input type="checkbox" name="autoReconnect"> <span data-i18n="s.auto_reconnect">Переподключаться, если VPN перестал работать</span></label>
+            <p class="hint" data-i18n="s.auto_reconnect_hint">Клиент проверяет соединение каждые 20 секунд. Если сервер перестал отвечать, Vlessia переподключится, а если не поможет — перейдёт на самый быстрый сервер той же подписки.</p>
+            <label class="check"><input type="checkbox" name="killSwitch"> <span data-i18n="s.kill_switch">Kill switch: блокировать интернет, когда VPN выключен</span></label>
+            <p class="hint" id="kill-hint"></p>
+            <label class="check"><input type="checkbox" name="balance"> <span data-i18n="s.balance">Балансировка между серверами подписки</span></label>
+            <p class="hint" data-i18n="s.balance_hint">Новые соединения распределяются между серверами одной подписки (round-robin). Не работает для WireGuard, AmneziaWG и OpenVPN.</p>
+            <label class="row-field" id="balance-strategy" hidden>
+              <span data-i18n="s.balance_strategy">Стратегия балансировки</span>
+              <select name="balanceStrategy">
+                <option value="" data-i18n="s.strategy_roundrobin">Поровну — каждое новое соединение на следующий сервер</option>
+                <option value="leastping" data-i18n="s.strategy_leastping">Самый быстрый — по задержке, с проверкой живости</option>
+              </select>
+            </label>
+            <details class="more">
+              <summary data-i18n="s.dns_ports">DNS и порты</summary>
+              <div class="more-body">
+                <label class="row-field"><span data-i18n="s.dns">DNS-серверы</span><input class="field-input" name="dns" aria-describedby="dns-hint"></label>
+                <p class="hint" id="dns-hint" data-i18n="s.dns_hint">Через запятую. Первый также назначается адаптеру в режиме «Весь трафик».</p>
+                <div class="pair">
+                  <label class="row-field"><span data-i18n="s.socks">Порт SOCKS5</span><input class="field-input" name="socksPort" type="number" min="1" max="65535"></label>
+                  <label class="row-field"><span data-i18n="s.http">Порт HTTP</span><input class="field-input" name="httpPort" type="number" min="1" max="65535"></label>
+                </div>
+              </div>
+            </details>
+          </section>
+        </div>
+        <div class="settings-panel" role="tabpanel" id="settings-rules" aria-labelledby="settings-tab-rules" hidden>
+          <button class="btn primary" type="button" id="rule-builder-open" data-i18n="rules.add">Добавить правило…</button>
+          <section>
+            <h3 data-i18n="s.rules">Правила для сайтов</h3>
+            <label class="check"><input type="checkbox" name="bypassRu"> <span data-i18n="s.bypass_ru">Российские сайты (.ru, .su, .рф) открывать напрямую</span></label>
+            <div class="pair">
+              <label class="row-field"><span data-i18n="s.rules_vpn">Всегда через VPN</span><textarea name="proxyRules" rows="4" spellcheck="false" placeholder="youtube.com&#10;instagram.com"></textarea></label>
+              <label class="row-field"><span data-i18n="s.rules_direct">Всегда напрямую</span><textarea name="directRules" rows="4" spellcheck="false" placeholder="gosuslugi.ru&#10;95.163.0.0/16"></textarea></label>
+            </div>
+            <p class="hint" data-i18n="s.rules_hint">По одному на строку: домен (вместе с поддоменами), IP-адрес или подсеть. «Через VPN» важнее «Напрямую» и галочки про российские сайты.</p>
+          </section>
+          <section id="apps-section">
+            <h3 data-i18n="s.apps">Правила для приложений</h3>
+            <div class="pair">
+              <label class="row-field"><span data-i18n="s.apps_vpn">Всегда через VPN</span><textarea name="proxyApps" rows="4" spellcheck="false" placeholder="chrome.exe&#10;Telegram.exe"></textarea></label>
+              <label class="row-field"><span data-i18n="s.apps_direct">Всегда напрямую</span><textarea name="directApps" rows="4" spellcheck="false" placeholder="steam.exe&#10;C:/Games/"></textarea></label>
+            </div>
+            <p class="hint" data-i18n="s.apps_hint">По одному на строку: имя процесса (chrome.exe), полный путь или папка с «/» на конце. Приложения важнее правил для сайтов. Работает на Windows, Linux и macOS.</p>
+          </section>
+          <section id="android-apps" hidden>
+            <h3 data-i18n="s.apps_android">Приложения через VPN</h3>
+            <label class="row-field">
+              <span data-i18n="s.apps_mode">Какие приложения отправлять через VPN</span>
+              <select name="androidAppsMode">
+                <option value="" data-i18n="s.apps_mode_all">Все приложения</option>
+                <option value="allow" data-i18n="s.apps_mode_allow">Только выбранные</option>
+                <option value="block" data-i18n="s.apps_mode_block">Все, кроме выбранных</option>
+              </select>
+            </label>
+            <div class="inline">
+              <button class="btn ghost" type="button" id="pick-apps" data-i18n="s.apps_pick">Выбрать приложения…</button>
+              <span class="muted" id="apps-count"></span>
+            </div>
+            <p class="hint" data-i18n="s.apps_android_hint">Само приложение Vlessia в туннель не попадает: ему нужен интернет для подписок и обновлений.</p>
+          </section>
+        </div>
+        <div class="settings-panel" role="tabpanel" id="settings-data" aria-labelledby="settings-tab-data" hidden>
+          <section>
+            <h3 data-i18n="s.updates">Обновления</h3>
+            <label class="check"><input type="checkbox" name="updateCheck"> <span data-i18n="s.update_check">Проверять обновления автоматически</span></label>
+            <div class="inline">
+              <span class="muted" id="version-line"></span>
+              <button class="btn ghost" type="button" id="check-update" data-i18n="s.check_now">Проверить сейчас</button>
+              <button class="btn ghost" type="button" id="settings-notes" data-i18n="dock.whats_new" hidden>Что нового</button>
+            </div>
+          </section>
+          <section>
+            <h3 data-i18n="backup.title">Резервные копии</h3>
+            <p class="muted" data-i18n="backup.warning">Файл содержит ключи, пароли и ссылки на подписки в открытом виде.</p>
+            <div class="inline">
+              <button class="btn" type="button" id="backup-export" data-i18n="backup.export">Сохранить копию</button>
+              <button class="btn ghost" type="button" id="backup-restore" data-i18n="backup.restore">Восстановить</button>
+            </div>
+          </section>
+          <section>
+            <h3 data-i18n="s.log">Журнал</h3>
+            <label class="row-field">
+              <span data-i18n="s.log_level">Подробность журнала Xray</span>
+              <select name="logLevel">
+                <option value="error" data-i18n="log.error">Только ошибки</option>
+                <option value="warning" data-i18n="log.warning">Предупреждения</option>
+                <option value="info" data-i18n="log.info">Подробно</option>
+                <option value="debug" data-i18n="log.debug">Отладка</option>
+                <option value="none" data-i18n="log.none">Не вести</option>
+              </select>
+            </label>
+            <div class="inline">
+              <button class="btn ghost" type="button" id="open-dir" data-i18n="s.open_dir">Открыть папку данных</button>
+            </div>
+          </section>
+        </div>
       </form>
     </section>
 

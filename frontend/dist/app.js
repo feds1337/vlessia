@@ -16,6 +16,9 @@ let diagnosticSteps = [];
 let trafficDays = 30;
 let trafficHistory = null;
 let historyBusy = false;
+let historyFailed = false;
+let historyRequestedAt = -Infinity;
+const HISTORY_REFRESH_MS = 15000;
 let refreshingAll = false;
 // Android: the apps picked for the tunnel, and the list of installed ones
 // (fetched from the native side on first use).
@@ -42,15 +45,19 @@ async function call(fn, ...args) {
   try {
     return await api()[fn](...args);
   } catch (e) {
-    const msg = String(e?.message ?? e);
-    if (msg.includes("need_admin")) {
-      $("#admin-dialog").showModal();
-    } else if (msg.includes("need_ovpn_auth")) {
-      askCredentials(state.status.serverId || state.selected, true);
-    } else {
-      toast(msg, true);
-    }
+    showCallError(e);
     throw e;
+  }
+}
+
+function showCallError(e) {
+  const msg = String(e?.message ?? e);
+  if (msg.includes("need_admin")) {
+    $("#admin-dialog").showModal();
+  } else if (msg.includes("need_ovpn_auth")) {
+    askCredentials(state.status.serverId || state.selected, true);
+  } else {
+    toast(msg, true);
   }
 }
 
@@ -555,41 +562,109 @@ function renderDiagnostic() {
   }));
 }
 
+function renderHistoryStatus() {
+  $("#traffic-content").hidden = !trafficHistory;
+  $("#traffic-status").hidden = !!trafficHistory && !historyFailed;
+  $("#traffic-message").textContent = t(historyFailed ? "traffic.load_failed" : "traffic.loading");
+  $("#traffic-retry").hidden = !historyFailed;
+  $("#traffic-retry").disabled = historyBusy;
+}
+
 function renderTrafficHistory() {
+  renderHistoryStatus();
   if (!trafficHistory) return;
   const days = trafficHistory.days.slice(-trafficDays);
-  const amount = (day) => day.up + day.down;
-  const peak = Math.max(1, ...days.map(amount));
-  const dayLabel = (day) => new Date(day.day + "T12:00:00").toLocaleDateString(document.documentElement.lang, {
-    day: "numeric", month: "short",
-  });
-  $("#traffic-summary").textContent = t("traffic.total", fmtBytes(days.reduce((total, day) => total + amount(day), 0)));
-  $("#traffic-chart").replaceChildren(...days.map((day) => {
-    const meter = document.createElement("meter");
-    meter.max = peak;
-    meter.value = amount(day);
-    meter.title = dayLabel(day) + " · " + fmtBytes(amount(day));
-    return meter;
-  }));
-  $("#traffic-days").innerHTML = days.map((day) => `<li>${esc(dayLabel(day))} · ${esc(t("traffic.split", fmtBytes(day.up), fmtBytes(day.down)))}</li>`).join("");
-  const connections = (trafficHistory.connections || []).slice().reverse();
-  $("#traffic-connections").innerHTML = connections.map((c) =>
-    `<li>${esc(fmtDate(c.started))} · ${esc(c.server)} · ${esc(t(c.mode === "tun" ? "dock.tun" : "dock.proxy"))}</li>`
-  ).join("") || `<li>${esc(t("traffic.empty"))}</li>`;
+  const up = days.reduce((total, day) => total + day.up, 0);
+  const down = days.reduce((total, day) => total + day.down, 0);
+  $("#traffic-summary").textContent = fmtBytes(up + down);
+  $("#traffic-up").textContent = fmtBytes(up);
+  $("#traffic-down").textContent = fmtBytes(down);
+  const hasTraffic = up + down > 0;
+  $("#traffic-no-data").hidden = hasTraffic;
+  $("#traffic-chart").hidden = !hasTraffic;
+  $("#traffic-range").hidden = !hasTraffic;
+  $("#traffic-detail").hidden = !hasTraffic;
+
+  const date = new Intl.DateTimeFormat(lang, {day: "numeric", month: "short"});
+  const dayLabel = (day) => date.format(new Date(day.day + "T12:00:00"));
+  if (hasTraffic) {
+    const peak = Math.max(...days.map(day => day.up + day.down));
+    $("#traffic-chart").innerHTML = days.map(day => {
+      const total = day.up + day.down;
+      const share = total ? day.up / total * 100 : 0;
+      const title = dayLabel(day) + " · " + fmtBytes(total);
+      return `<span class="usage-bar" title="${esc(title)}" style="height:${total / peak * 100}%">
+        <span class="usage-bar-up" style="height:${share}%"></span><span class="usage-bar-down" style="flex:1"></span>
+      </span>`;
+    }).join("");
+    $("#traffic-range").innerHTML = `<span>${esc(dayLabel(days[0]))}</span><span>${esc(dayLabel(days[days.length - 1]))}</span>`;
+    $("#traffic-days").innerHTML = days.slice().reverse().map(day =>
+      `<tr><th scope="row">${esc(dayLabel(day))}</th><td>${esc(fmtBytes(day.down))}</td><td>${esc(fmtBytes(day.up))}</td></tr>`
+    ).join("");
+  }
+
+  const since = days.length ? new Date(days[0].day + "T00:00:00").getTime() / 1000 : Infinity;
+  const connections = (trafficHistory.connections || []).filter(c => c.started >= since).reverse();
+  $("#traffic-no-connections").hidden = connections.length > 0;
+  $("#traffic-connections").innerHTML = connections.map(c =>
+    `<li class="usage-connection"><div><strong>${esc(c.server)}</strong><time datetime="${new Date(c.started * 1000).toISOString()}">${esc(fmtDate(c.started))}</time></div>
+      <span class="usage-mode">${esc(t(c.mode === "tun" ? "dock.tun" : "dock.proxy"))}</span></li>`
+  ).join("");
 }
 
 async function loadTrafficHistory() {
   if (historyBusy) return;
   historyBusy = true;
+  historyRequestedAt = performance.now();
+  renderHistoryStatus();
   try {
-    trafficHistory = await call("GetTrafficHistory");
+    trafficHistory = await api().GetTrafficHistory();
+    historyFailed = false;
     renderTrafficHistory();
-  } catch { /* toast shown */ } finally {
+  } catch {
+    historyFailed = true;
+  } finally {
     historyBusy = false;
+    renderHistoryStatus();
   }
 }
 
 // ---------- settings ----------
+
+function bindSettingsNavigation() {
+  const tabs = [...document.querySelectorAll(".settings-nav [role=tab]")];
+  const select = (target) => {
+    for (const tab of tabs) {
+      const selected = tab === target;
+      tab.setAttribute("aria-selected", String(selected));
+      tab.tabIndex = selected ? 0 : -1;
+      document.getElementById(tab.getAttribute("aria-controls")).hidden = !selected;
+    }
+    $("#settings-form").scrollTop = 0;
+  };
+  tabs.forEach((tab, i) => {
+    tab.addEventListener("click", () => select(tab));
+    tab.addEventListener("keydown", (e) => {
+      const destinations = {
+        ArrowLeft: (i - 1 + tabs.length) % tabs.length,
+        ArrowRight: (i + 1) % tabs.length,
+        Home: 0,
+        End: tabs.length - 1,
+      };
+      const target = tabs[destinations[e.key]];
+      if (!target) return;
+      e.preventDefault();
+      target.focus();
+      select(target);
+    });
+  });
+}
+
+function setSaveStatus(key) {
+  const el = $("#settings-save");
+  el.dataset.i18n = key;
+  el.textContent = t(key);
+}
 
 function fillSettings() {
   const f = $("#settings-form");
@@ -617,7 +692,9 @@ function fillSettings() {
   }
   f.animations.checked = !s.noAnimations;
   f.theme.value = s.theme || "";
-  f.accent.value = s.accent || "";
+  for (const swatch of f.elements.namedItem("accent")) {
+    swatch.checked = swatch.value === (s.accent || "");
+  }
   f.updateCheck.checked = !s.noUpdateCheck;
   f.logLevel.value = s.logLevel;
   $("#lang-select").value = lang;
@@ -829,7 +906,13 @@ function applyMotion(off) {
 }
 
 function showView(name) {
-  $$(".tab").forEach((b) => b.classList.toggle("active", b.dataset.view === name));
+  document.body.classList.toggle("compact-dock", name === "traffic" || name === "settings");
+  $$(".tab").forEach((b) => {
+    const active = b.dataset.view === name;
+    b.classList.toggle("active", active);
+    if (active) b.setAttribute("aria-current", "page");
+    else b.removeAttribute("aria-current");
+  });
   moveTabMark();
   $$(".view").forEach((v) => v.classList.toggle("active", v.id === "view-" + name));
   clearInterval(logsTimer);
@@ -975,8 +1058,13 @@ function enhanceSelect(sel) {
   box.prepend(sel);
   const btn = box.querySelector(".dropdown-btn");
   const list = box.querySelector(".dropdown-list");
-  const label = box.parentElement.querySelector(":scope > span")?.textContent;
-  if (label) btn.setAttribute("aria-label", label);
+  const label = box.parentElement.querySelector(":scope > span");
+  if (label) {
+    label.id = "select-label-" + sel.name;
+    const choice = btn.querySelector(".dropdown-label");
+    choice.id = "select-value-" + sel.name;
+    btn.setAttribute("aria-labelledby", label.id + " " + choice.id);
+  }
 
   const items = () => [...list.children];
   const close = (focus) => {
@@ -1050,6 +1138,14 @@ function syncSelect(sel) {
   if (label) label.textContent = sel.selectedOptions[0]?.textContent ?? "";
 }
 
+// All settings editors write a full snapshot, so finish writes in edit order.
+let settingsQueue = Promise.resolve();
+function saveSettings(settings) {
+  const write = settingsQueue.then(() => api().SaveSettings(settings));
+  settingsQueue = write.catch(() => {});
+  return write;
+}
+
 function bind() {
   $("#window-minimise").addEventListener("click", () => window.runtime.WindowMinimise());
   $("#window-maximise").addEventListener("click", toggleWindowMaximise);
@@ -1081,7 +1177,7 @@ function bind() {
       const other = ($("#rule-route").value === "proxy" ? "direct" : "proxy") + suffix;
       if (settings[other].some((r) => r.trim().toLowerCase() === value.toLowerCase())) throw new Error(t("rules.conflict"));
       settings[key] = [...new Set([...settings[key].filter((r) => r.trim()), value])];
-      await api().SaveSettings(settings);
+      await saveSettings(settings);
       state.settings = settings;
       fillSettings();
       $("#rule-builder").close();
@@ -1090,6 +1186,7 @@ function bind() {
       $("#rule-error").textContent = trGo(String(err?.message ?? err));
     } finally { btn.disabled = false; }
   });
+  bindSettingsNavigation();
   $$("#settings-form select").forEach(enhanceSelect);
   $$("details.more").forEach(animateDetails);
   $$(".tab").forEach((b) => b.addEventListener("click", () => showView(b.dataset.view)));
@@ -1115,12 +1212,11 @@ function bind() {
   $$("#view-traffic [data-days]").forEach((button) => button.addEventListener("click", () => {
     trafficDays = Number(button.dataset.days);
     $$("#view-traffic [data-days]").forEach((b) => {
-      b.classList.toggle("primary", b === button);
       b.setAttribute("aria-pressed", String(b === button));
     });
     renderTrafficHistory();
-    loadTrafficHistory();
   }));
+  $("#traffic-retry").addEventListener("click", loadTrafficHistory);
   $("#backup-export").addEventListener("click", () => call("ExportBackup")
     .then((saved) => saved && toast(t("backup.saved"))).catch(() => {}));
   $("#backup-restore").addEventListener("click", () => {
@@ -1274,19 +1370,37 @@ function bind() {
     if ($("#apps-dialog").returnValue !== "ok") return;
     androidApps = [...appsSelection];
     renderAppsCount();
-    call("SaveSettings", readSettings()).then(() => toast(t("toast.saved"))).catch(() => {});
+    saveSettings(readSettings()).then(() => toast(t("toast.saved"))).catch(err => {
+      fillSettings();
+      showCallError(err);
+    });
   });
 
-  // Settings save as soon as a field changes.
+  let lastEdit = 0;
   $("#settings-form").addEventListener("submit", (e) => e.preventDefault());
-  $("#settings-form").addEventListener("change", (e) => {
+  $("#settings-form").addEventListener("change", async (e) => {
     if (e.target.id === "autostart" || e.target.id === "lang-select") return;
     if (e.target.name === "animations") applyMotion(!e.target.checked);
     if (e.target.name === "theme" || e.target.name === "accent") applyLook(e.target.form.theme.value, e.target.form.accent.value);
     if (e.target.name === "balance") $("#balance-strategy").hidden = !e.target.checked;
     // A bad rule keeps the text so it can be corrected.
     const keep = e.target.tagName === "TEXTAREA";
-    call("SaveSettings", readSettings()).then(() => toast(t("toast.saved"))).catch(() => keep || fillSettings());
+    const settings = readSettings();
+    const edit = ++lastEdit;
+    setSaveStatus("s.saving");
+    try {
+      await saveSettings(settings);
+      if (edit === lastEdit) setSaveStatus("toast.saved");
+    } catch (err) {
+      if (edit !== lastEdit) return;
+      if (!keep) {
+        fillSettings();
+        applyLook(state.settings.theme, state.settings.accent);
+        applyMotion(state.settings.noAnimations);
+      }
+      setSaveStatus("s.save_failed");
+      showCallError(err);
+    }
   });
   $("#lang-select").addEventListener("change", (e) => {
     setLang(e.target.value, false);
@@ -1322,12 +1436,14 @@ function bind() {
   });
   window.runtime.EventsOn("traffic", (sample) => {
     renderTraffic(sample);
-    if ($("#view-traffic").classList.contains("active") && !document.hidden) loadTrafficHistory();
+    if (!document.hidden && !historyFailed && $("#view-traffic").classList.contains("active")
+        && performance.now() - historyRequestedAt >= HISTORY_REFRESH_MS) loadTrafficHistory();
   });
   window.runtime.EventsOn("notice", (text) => toast(trGo(text)));
   window.addEventListener("resize", moveTabMark);
   document.addEventListener("visibilitychange", () => {
     if (!document.hidden) {
+      if ($("#view-traffic").classList.contains("active")) loadTrafficHistory();
       live.last = performance.now();
       kick();
       if ($("#view-logs").classList.contains("active") && $("#logs-auto").checked) refreshLogs();

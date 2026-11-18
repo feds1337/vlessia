@@ -183,3 +183,21 @@ test('title bar layout stays above the content in both themes', async ({ page },
   await page.evaluate(() => applyLook('light',''));
   await page.screenshot({path:testInfo.outputPath('titlebar-light.png')});
 });
+
+test('speed graph pauses once settled and resumes on the next sample', async ({ page }) => {
+  await boot(page);
+  const result = await page.evaluate(() => {
+    state.status.state = 'connected';
+    document.documentElement.classList.remove('no-anim');
+    const sample = {history: [{down: 100}, {down: 200}], up: 0, down: 0};
+    renderTraffic(sample);
+    const animating = drawGraph(live.at + 100, 0.03);
+    const settled = drawGraph(live.at + 1500, 0.03);
+    renderTraffic(sample);
+    const resumed = drawGraph(live.at + 100, 0.03);
+    state.status.state = 'disconnected';
+    drawGraph(live.at + 200, 0.03);
+    return { animating, settled, resumed, cleared: !document.querySelector('#graph-down').hasAttribute('d') };
+  });
+  expect(result).toEqual({animating: true, settled: false, resumed: true, cleared: true});
+});

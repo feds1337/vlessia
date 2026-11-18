@@ -1006,10 +1006,19 @@ html.desktop-chrome .titlebar {
   align-items: center;
   flex: 1;
   min-width: 0;
-  padding-left: 20px;
+  padding-left: 24px;
 }
-.titlebar-brand { display: flex; align-items: center; gap: 9px; font-size: 13px; font-weight: 650; letter-spacing: -.02em; pointer-events: none; }
-.titlebar-brand svg { width: 18px; height: 20px; fill: var(--lagoon); }
+.titlebar-brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 16px;
+  line-height: 20px;
+  font-weight: 600;
+  letter-spacing: normal;
+  pointer-events: none;
+}
+.titlebar-brand svg { width: 20px; height: 20px; fill: var(--lagoon); }
 .titlebar-brand .cut { fill: var(--paper); }
 .window-controls { --wails-draggable: no-drag; display: flex; flex-shrink: 0; }
 .window-control {

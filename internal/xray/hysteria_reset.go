@@ -12,7 +12,7 @@ import (
 // cleans them up on a periodic timer. resetHysteria forces immediate cleanup
 // and empties that cache whenever an instance stops.
 //
-// The linknamed symbols mirror xray-core v26.10.21
+// The linknamed symbols mirror xray-core v26.11.9
 // (transport/internet/hysteria/dialer.go); TestHysteriaResetLayout guards
 // against changes.
 
